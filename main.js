@@ -17,10 +17,14 @@ function sendInvitationSmsIfNeeded(twilioClient, snapshot) {
   var user = snapshot.val();
   var phone = user.phone.replace(/\D/g,'');
   if (user.invitedAt && !user.verifiedAt && !user.invitationSmsSentAt && !user.invitationSmsFailedAt) {
+    body = 'I just signed up with UR Capital! You can too: https://signup.ur.capital?p=' + phone;
+    if (user.referralFirstName) {
+      body = body + " --" + user.referralFirstName;
+    }
     twilioClient.sms.messages.create({
       to:'+1' + phone,
       from: process.env.twilio_from_number,
-      body: 'I just signed up with UR Capital! You can too: https://signup.ur.capital?p=' + phone
+      body: body
     }, function(error, message) {
       if (error) {
         console.log('error sending invitation', error);
