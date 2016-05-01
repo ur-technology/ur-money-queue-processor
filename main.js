@@ -15,11 +15,12 @@ throng(start, {
 
 function sendInvitationSmsIfNeeded(twilioClient, snapshot) {
   var user = snapshot.val();
+  var phone = user.phone.replace(/\D/g,'');
   if (user.invitedAt && !user.verifiedAt && !user.invitationSmsSentAt && !user.invitationSmsFailedAt) {
     twilioClient.sms.messages.create({
-      to:'+1' + user.phone.replace(/\D/g,''),
+      to:'+1' + phone,
       from: process.env.twilio_from_number,
-      body: 'I just signed up with UR Capital! You can too: https://signup.ur.capital?r=' + user.referralMemberId + '&p=' + user.phone
+      body: 'I just signed up with UR Capital! You can too: https://signup.ur.capital?p=' + phone
     }, function(error, message) {
       if (error) {
         console.log('error sending invitation', error);
@@ -34,11 +35,12 @@ function sendInvitationSmsIfNeeded(twilioClient, snapshot) {
 
 function sendWelcomeSmsIfNeeded(twilioClient, snapshot) {
   var user = snapshot.val();
+  var phone = user.phone.replace(/\D/g,'');
   if (user.memberId > 5 && user.verifiedAt && !user.welcomeSmsSentAt && !user.welcomeSmsFailedAt) {
     var messageToSend = {
-      to:'+1' + user.phone.replace(/\D/g,''),
+      to:'+1' + phone,
       from: process.env.twilio_from_number,
-      body: 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital?p=' + user.phone
+      body: 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital?p=' + phone
     };
     twilioClient.sms.messages.create(messageToSend, function(error, message) {
       if (error) {
