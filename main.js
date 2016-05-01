@@ -19,7 +19,7 @@ function sendInvitationSmsIfNeeded(twilioClient, snapshot) {
     twilioClient.sms.messages.create({
         to:'+1' + user.phone,
         from: process.env.twilio_from_number,
-        body: 'I just signed up with UR Capital! You can too: www.ur.com?r=' + user.referralMemberId + '&p=' + user.phone
+        body: 'I just signed up with UR Capital! You can too: https://signup.ur.capital?r=' + user.referralMemberId + '&p=' + user.phone
     }, function(error, message) {
       if (error) {
         console.log('error sending invitation', error);
