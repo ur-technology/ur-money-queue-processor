@@ -7,7 +7,7 @@ var s = require('underscore.string');
 var twilio = require('twilio');
 var moment = require('moment');
 
-start();
+// start();
 
 throng(start, {
   workers : 1
