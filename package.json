@@ -1,0 +1,21 @@
+{
+  "name": "notification_server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --debug main.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^2.0.0",
+    "firebase": "^2.4.1",
+    "moment": "^2.13.0",
+    "throng": "^2.0.1",
+    "twilio": "^2.9.1",
+    "underscore": "^1.8.3",
+    "underscore.string": "^3.2.3"
+  }
+}
