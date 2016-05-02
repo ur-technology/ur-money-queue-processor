@@ -6,84 +6,100 @@ var _ = require('underscore');
 var s = require('underscore.string');
 var twilio = require('twilio');
 var moment = require('moment');
+var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
+var usersRef = (new Firebase(process.env.firebase_url)).child("users");
+var TIMESTAMP = Firebase.ServerValue.TIMESTAMP;
 
-// start();
+start();
 
 throng(start, {
   workers : 1
 });
 
-function sendInvitationSmsIfNeeded(twilioClient, snapshot) {
-  var user = snapshot.val();
-  var phone = user.phone.replace(/\D/g,'');
-  if (user.invitedAt && !user.verifiedAt && !user.invitationSmsSentAt && !user.invitationSmsFailedAt) {
-    body = 'I just signed up with UR Capital! You can too: https://signup.ur.capital?p=' + phone;
-    if (user.referralFirstName) {
-      body = body + " --" + user.referralFirstName;
-    }
-    twilioClient.sms.messages.create({
-      to:'+1' + phone,
-      from: process.env.twilio_from_number,
-      body: body
-    }, function(error, message) {
-      if (error) {
-        console.log('error sending invitation', error);
-        snapshot.ref().update({invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP});
-      } else {
-        console.log('invitation successfully sent to', user.phone);
-        snapshot.ref().update({invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
-      }
-    });
-  }
-}
-
-function sendWelcomeSmsIfNeeded(twilioClient, snapshot) {
-  var user = snapshot.val();
-  var phone = user.phone.replace(/\D/g,'');
-  if (user.memberId > 5 && user.verifiedAt && !user.welcomeSmsSentAt && !user.welcomeSmsFailedAt) {
-    var messageToSend = {
-      to:'+1' + phone,
-      from: process.env.twilio_from_number,
-      body: 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital?p=' + phone
-    };
-    twilioClient.sms.messages.create(messageToSend, function(error, message) {
-      if (error) {
-        console.log('error sending welcome message', error);
-        snapshot.ref().update({welcomeSmsFailedAt: Firebase.ServerValue.TIMESTAMP});
-      } else {
-        console.log('welcome message successfully sent to', user.phone);
-        snapshot.ref().update({welcomeSmsSentAt: Firebase.ServerValue.TIMESTAMP});
-      }
-    });
-  }
-}
-
 function start() {
   console.log('worker started');
-
-  var ref = new Firebase(process.env.firebase_ref);
-  var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
   var oneDayAgo = moment().add(-1, 'day').valueOf();
 
   // get all users invited in the last day
-  var invitedUsersRef = ref.child("users").orderByChild("invitedAt").startAt(oneDayAgo);
-  invitedUsersRef.on("child_added", function(snapshot) {
-    sendInvitationSmsIfNeeded(twilioClient, snapshot);
-  });
-  invitedUsersRef.on("child_changed", function(snapshot) {
-    sendInvitationSmsIfNeeded(twilioClient, snapshot);
-  });
-
-  // get all users verified in the last day
-  var verifiedUsersRef = ref.child("users").orderByChild("verifiedAt").startAt(oneDayAgo);
-  verifiedUsersRef.on("child_changed", function(snapshot) {
-    sendWelcomeSmsIfNeeded(twilioClient, snapshot);
+  _.each(["child_added", "child_changed"], function(event) {
+    usersRef.orderByChild("invitedAt").startAt(oneDayAgo).on(event, function(snapshot) {
+      var user = snapshot.val();
+      if (user.invitedAt && !user.signedUpAt && !user.invitationSmsSentAt && !user.invitationSmsFailedAt) {
+        sendInvitationMessage(user);
+      }
+    });
   });
 
+  // get all users signed up in the last day
+  usersRef.orderByChild("signedUpAt").startAt(oneDayAgo).on("child_changed", function(snapshot) {
+    var user = snapshot.val();
+    if (user.signedUpAt && !user.signUpMessagesSentAt && !user.signUpMessagesFailedAt) {
+      sendSignUpMessages(user);
+    }
+  });
 };
 
 process.on('SIGTERM', function () {
   console.log('exiting');
   process.exit();
 });
+
+//////////////////////////////////////////////
+// private functions
+//////////////////////////////////////////////
+
+function fullName(user) {
+  return user.firstName + " " + user.lastName;
+}
+
+function sendMessage(phone, messageText, callback) {
+  twilioClient.sms.messages.create({
+    to:'+1' + phone,
+    from: process.env.twilio_from_number,
+    body: messageText
+  }, function(error, message) {
+    if (error) {
+      console.log("error sending message '" + message + "'", error);
+    }
+    if (callback) {
+      callback(error);
+    }
+  });
+}
+
+function sendInvitationMessage(user) {
+  var messageText = fullName(user.sponsor) + ' invites you to be a beta tester for UR Capital!  https://signup.ur.capital?p=' + user.phone;
+  sendMessage(user.phone, messageText, function(error) {
+    usersRef.child(user.uid).update(error ? {invitationSmsFailedAt: TIMESTAMP} : {invitationSmsSentAt: TIMESTAMP});
+  });
+};
+
+function sendSignUpMessages(user) {
+  var welcomeMessageText = 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital?p=' + user.phone;
+  sendMessage(user.phone, welcomeMessageText, function(error) {
+    updateInfo = error ? {signUpMessagesFailedAt: TIMESTAMP} : {signUpMessagesSentAt: TIMESTAMP};
+    usersRef.child(user.uid).update(updateInfo, function(error) {
+      if (user.sponsor) {
+        sendUplineSignUpMessages(user, null, user.sponsor.uid, 1);
+      }
+    });
+  });
+};
+
+function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUid, uplineLevel) {
+  usersRef.child(uplineUid).once("value", function(snapshot) {
+    var uplineUser = snapshot.val()[0];
+    var messageText = "Your status has been updated because ";
+    if (newUserSponsor) {
+      messageText = messageText + " " + fullName(newUserSponsor) + " referred " + fullName(newUser) + " to be a beta tester for UR.capital!"
+    } else {
+      newUserSponsor = uplineUser
+      messageText = messageText + fullName(newUser) + " has signed up as a beta tester with UR.capital!"
+    }
+    sendMessage(uplineUser.phone, messageText);
+    if (uplineLevel < 7 && uplineUser.sponsor) {
+      sendUplineSignUpMessages(newUser, newUserSponsor, uplineUser.sponsor.uid, uplineLevel + 1);
+    }
+  });
+};
