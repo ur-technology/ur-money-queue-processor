@@ -89,7 +89,7 @@ function sendSignUpMessages(user) {
 
 function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUid, uplineLevel) {
   usersRef.child(uplineUid).once("value", function(snapshot) {
-    var uplineUser = snapshot.val()[0];
+    var uplineUser = snapshot.val();
     var messageText = "Your status has been updated because ";
     if (newUserSponsor) {
       messageText = messageText + " " + fullName(newUserSponsor) + " referred " + fullName(newUser) + " to be a beta tester for UR.capital!"
