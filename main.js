@@ -10,14 +10,12 @@ var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process
 var usersRef = (new Firebase(process.env.firebase_url)).child("users");
 var TIMESTAMP = Firebase.ServerValue.TIMESTAMP;
 
-// start();
-
 throng(start, {
   workers : 1
 });
 
-function start() {
-  console.log('worker started');
+function start(id) {
+  console.log('worker started ' + id);
 
   var oneDayAgo = moment().add(-1, 'day').valueOf();
 
@@ -61,6 +59,8 @@ function sendMessage(phone, messageText, callback) {
   }, function(error, message) {
     if (error) {
       console.log("error sending message '" + message + "'", error);
+    } else {
+      console.log("sent message '" + messageText + "' to '" + phone + "'");
     }
     if (callback) {
       callback(error);
