@@ -10,7 +10,7 @@ var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process
 var usersRef = (new Firebase(process.env.firebase_url)).child("users");
 var TIMESTAMP = Firebase.ServerValue.TIMESTAMP;
 
-start();
+// start();
 
 throng(start, {
   workers : 1
