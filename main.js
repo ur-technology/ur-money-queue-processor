@@ -69,14 +69,14 @@ function sendMessage(phone, messageText, callback) {
 }
 
 function sendInvitationMessage(user) {
-  var messageText = fullName(user.sponsor) + ' invites you to be a beta tester for UR Capital!  https://signup.ur.capital?p=' + user.phone;
+  var messageText = fullName(user.sponsor) + ' invites you to be a beta tester for UR Capital!  https://signup.ur.capital/go/' + user.phone;
   sendMessage(user.phone, messageText, function(error) {
     usersRef.child(user.uid).update(error ? {invitationSmsFailedAt: TIMESTAMP} : {invitationSmsSentAt: TIMESTAMP});
   });
 };
 
 function sendSignUpMessages(user) {
-  var welcomeMessageText = 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital?p=' + user.phone;
+  var welcomeMessageText = 'Congratulations on being part of the UR Capital beta program! Build status by referring friends: https://signup.ur.capital/go/' + user.phone;
   sendMessage(user.phone, welcomeMessageText, function(error) {
     updateInfo = error ? {signUpMessagesFailedAt: TIMESTAMP} : {signUpMessagesSentAt: TIMESTAMP};
     usersRef.child(user.uid).update(updateInfo, function(error) {
