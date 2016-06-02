@@ -86,7 +86,7 @@ function handleURMoneyTasks() {
 
             var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref();
             if (phoneVerification.attemptedVerificationCode == phoneVerification.verificationCode) {
-              var tokenGenerator = new FirebaseTokenGenerator("yIxR2gdvMnN2Zu9NfzVeX9tJPtElIt2Qu0ED1oo1");
+              var tokenGenerator = new FirebaseTokenGenerator(process.env.firebase_secret);
               var authToken = tokenGenerator.createToken({uid: uid, some: "arbitrary", data: "here"});
               console.log("attemptedVerificationCode " + verificationCode + " matches verificationCode; sending authToken to user");
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
