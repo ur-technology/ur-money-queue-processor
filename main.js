@@ -11,7 +11,7 @@ var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
-handleURMoneyTasks(); // uncomment this line for testing in development
+// handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
 
 throng(start, {
