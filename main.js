@@ -41,18 +41,20 @@ function handleURMoneyTasks() {
   firebaseRef.child("phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
     var phoneVerificationRef = phoneVerificationSnapshot.ref();
     var phoneVerification = phoneVerificationSnapshot.val();
-    if (!_.isUndefined(phoneVerification.smsSuccess)) {
-      // this record was already processed
-      return;
-    }
 
     // find user with the same phone as this verification
     console.log("processing phone verification for " + phoneVerification.phone);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
 
+      if (!_.isUndefined(phoneVerification.smsSuccess)) {
+        // this record was already processed
+        console.log("phone verification for " + phoneVerification.phone + " was already processed - skipping");
+        return;
+      }
+
       if (!usersSnapshot.exists()) {
         // let user know no sms was sent because of an error
-        console.log("warning: no matching user found for " + phoneVerification.phone);
+        console.log("no matching user found for " + phoneVerification.phone + " - skipping");
         phoneVerificationRef.update({smsSuccess: false, smsError: "No user account or invitation was found matching the given phone number."});
         return;
       }
@@ -70,16 +72,19 @@ function handleURMoneyTasks() {
           phoneVerificationRef.on("value", function(updatedPhoneVerificationSnapshot) {
             if (!updatedPhoneVerificationSnapshot.exists()) {
               // record was deleted
+              console.log("phoneVerification record unexpectedly deleted for  " + phoneVerification.phone + " - skipping");
               return;
             }
 
             var updatedPhoneVerification = updatedPhoneVerificationSnapshot.val();
             if (!_.isUndefined(updatedPhoneVerification.verificationSuccess)) {
+              console.log("phoneVerification.verificationSuccess already set for " + phoneVerification.phone + " - skipping");
               // this record was already processed
               return;
             }
 
-            if (!updatedPhoneVerification.attemptedVerificationCode) {
+            if (_.isUndefined(updatedPhoneVerification.attemptedVerificationCode)) {
+              console.log("phoneVerification.attemptedVerificationCode not set for " + phoneVerification.phone + " - skipping");
               // attemptedVerificationCode not yet set
               return;
             }
@@ -91,7 +96,7 @@ function handleURMoneyTasks() {
               console.log("attemptedVerificationCode " + verificationCode + " matches verificationCode; sending authToken to user");
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
             } else {
-              console.log("warning: attemptedVerificationCode " + verificationCode + " doesn't matches correct code");
+              console.log("attemptedVerificationCode " + verificationCode + " does not match verificationCode");
               updatedPhoneVerificationRef.update({verificationSuccess: false});
             }
           });
