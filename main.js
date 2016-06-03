@@ -11,7 +11,7 @@ var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
-// handleURMoneyTasks(); // uncomment this line for testing in development
+handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
 
 throng(start, {
@@ -85,7 +85,7 @@ function handleURMoneyTasks() {
             }
 
             var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref();
-            if (phoneVerification.attemptedVerificationCode == phoneVerification.verificationCode) {
+            if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
               var tokenGenerator = new FirebaseTokenGenerator(process.env.firebase_secret);
               var authToken = tokenGenerator.createToken({uid: uid, some: "arbitrary", data: "here"});
               console.log("attemptedVerificationCode " + verificationCode + " matches verificationCode; sending authToken to user");
