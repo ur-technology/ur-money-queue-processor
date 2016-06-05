@@ -141,7 +141,7 @@ function fullName(user) {
 
 function sendMessage(phone, messageText, callback) {
   twilioClient.sms.messages.create({
-    to:'+1' + phone,
+    to: phone,
     from: process.env.twilio_from_number,
     body: messageText
   }, function(error, message) {
