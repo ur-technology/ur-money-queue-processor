@@ -6,7 +6,7 @@ var s = require('underscore.string');
 var moment = require('moment');
 var Firebase = require("firebase");
 var firebaseUrl = process.env.NODE_ENV == 'production' ? process.env.firebase_url_production : process.env.firebase_url_dev;
-console.log("firebaseUrl=",firebaseUrl);
+var firebaseSecret = process.env.NODE_ENV == 'production' ? process.env.firebase_secret_production : process.env.firebase_secret_dev;
 var firebaseRef = new Firebase(firebaseUrl);
 
 var FirebaseTokenGenerator = require("firebase-token-generator");
@@ -94,7 +94,7 @@ function handleURMoneyTasks() {
 
             var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref();
             if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
-              var tokenGenerator = new FirebaseTokenGenerator(process.env.firebase_secret);
+              var tokenGenerator = new FirebaseTokenGenerator(firebaseSecret);
               var authToken = tokenGenerator.createToken({uid: uid, some: "arbitrary", data: "here"});
               console.log("attemptedVerificationCode " + verificationCode + " matches verificationCode; sending authToken to user");
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
