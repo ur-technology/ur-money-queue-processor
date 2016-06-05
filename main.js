@@ -5,7 +5,10 @@ var _ = require('underscore');
 var s = require('underscore.string');
 var moment = require('moment');
 var Firebase = require("firebase");
-var firebaseRef = new Firebase(process.env.NODE_ENV == 'production' ? process.env.firebase_url_production : process.env.firebase_url_dev);
+var firebaseUrl = process.env.NODE_ENV == 'production' ? process.env.firebase_url_production : process.env.firebase_url_dev;
+console.log("firebaseUrl=",firebaseUrl);
+var firebaseRef = new Firebase(firebaseUrl);
+
 var FirebaseTokenGenerator = require("firebase-token-generator");
 var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
