@@ -17,8 +17,6 @@ var Web3 = require('web3');
 // handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
 
-getBalances();
-
 throng(start, {
   workers : 1
 });
@@ -67,8 +65,8 @@ function getBalances() {
       }
       i++;
       if (i == numUsers) {
-        var fiveMinutes = 7000; // 5 * 60 * 1000;
-        setTimeout(getBalances, fiveMinutes);
+        var thirtySeconds = 30 * 1000;
+        setTimeout(getBalances, thirtySeconds);
       }
     });
   });
