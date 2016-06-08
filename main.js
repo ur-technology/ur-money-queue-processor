@@ -8,14 +8,16 @@ var Firebase = require("firebase");
 var firebaseUrl = process.env.NODE_ENV == 'production' ? process.env.firebase_url_production : process.env.firebase_url_dev;
 var firebaseSecret = process.env.NODE_ENV == 'production' ? process.env.firebase_secret_production : process.env.firebase_secret_dev;
 var firebaseRef = new Firebase(firebaseUrl);
-
 var FirebaseTokenGenerator = require("firebase-token-generator");
 var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
+var Web3 = require('web3');
 
 // handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
+
+getBalances();
 
 throng(start, {
   workers : 1
@@ -24,6 +26,7 @@ throng(start, {
 function start(id) {
   console.log('worker started ' + id);
 
+  getBalances();
   handleURCapitalAppTasks();
   handleURMoneyTasks();
 
@@ -37,6 +40,39 @@ function start(id) {
 //////////////////////////////////////////////
 // task handler functions
 //////////////////////////////////////////////
+
+
+function getBalances() {
+  var web3 = new Web3();
+  web3.setProvider(new web3.providers.HttpProvider('http://198.74.48.148:9595'));
+
+  usersRef.once("value", function(snapshot) {
+    var usersObject = snapshot.val();
+    var numUsers = _.size(usersObject);
+    var i = 0;
+    _.each(usersObject, function(user,uid) {
+      if (user.wallet && user.wallet.publicKey) {
+        var currentBalanceAmount = web3.eth.getBalance(user.wallet.publicKey).toString();
+        if (!user.wallet.currentBalance || currentBalanceAmount != user.wallet.currentBalance.amount) {
+          var newBalanceInfo = {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP};
+          usersRef.child(uid).child("wallet").child("currentBalance").update(
+            {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP}
+          ).then(() => {
+            usersRef.child(uid).child("wallet").child("currentBalance").once("value", function(snapshot) {
+              var currentBalanceRecord = snapshot.val();
+              usersRef.child(uid).child("wallet").child("balanceHistory").push(currentBalanceRecord);
+            });
+          });
+        }
+      }
+      i++;
+      if (i == numUsers) {
+        var fiveMinutes = 7000; // 5 * 60 * 1000;
+        setTimeout(getBalances, fiveMinutes);
+      }
+    });
+  });
+}
 
 function handleURMoneyTasks() {
 
