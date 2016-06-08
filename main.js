@@ -17,9 +17,17 @@ var Web3 = require('web3');
 // handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
 
-throng(start, {
-  workers : 1
-});
+var environment = process.env.NODE_ENV || "development"
+console.log("starting with environment " + environment);
+if (environment == "development") {
+    // development environment
+    start(1);
+} else {
+  // staging or production environment
+  throng(start, {
+    workers : 1
+  });
+}
 
 function start(id) {
   console.log('worker started ' + id);
@@ -130,10 +138,10 @@ function handleURMoneyTasks() {
             if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
               var tokenGenerator = new FirebaseTokenGenerator(firebaseSecret);
               var authToken = tokenGenerator.createToken({uid: uid, some: "arbitrary", data: "here"});
-              console.log("attemptedVerificationCode " + verificationCode + " matches verificationCode; sending authToken to user");
+              console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
             } else {
-              console.log("attemptedVerificationCode " + verificationCode + " does not match verificationCode");
+              console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
               updatedPhoneVerificationRef.update({verificationSuccess: false});
             }
           });
