@@ -199,7 +199,7 @@ function sendMessage(phone, messageText, callback) {
 }
 
 function prelaunchReferralUrl(user) {
-  return "https://signup.ur.capital/go/' + user.phone.replace(/^(\+1|1)/,"");
+  return "https://signup.ur.capital/go/" + user.phone.replace(/^(\+1|1)/,"");
 }
 
 function sendInvitationMessage(user) {
