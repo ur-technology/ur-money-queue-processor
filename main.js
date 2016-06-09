@@ -203,7 +203,7 @@ function prelaunchReferralUrl(user) {
 }
 
 function sendInvitationMessage(user) {
-  var messageText = fullName(user.sponsor) + ' invites you to be a beta tester for UR Capital! " + prelaunchReferralUrl(user);
+  var messageText = fullName(user.sponsor) + " invites you to be a beta tester for UR Capital! " + prelaunchReferralUrl(user);
   sendMessage(user.phone, messageText, function(error) {
     usersRef.child(user.uid).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
   });
