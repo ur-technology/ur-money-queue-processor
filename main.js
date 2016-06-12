@@ -50,7 +50,7 @@ function start(id) {
 
 function getBalances() {
   var web3 = new Web3();
-  web3.setProvider(new web3.providers.HttpProvider('http://198.74.48.148:9595'));
+  web3.setProvider(new web3.providers.HttpProvider('http://45.33.72.14:9595'));
 
   usersRef.once("value", function(snapshot) {
     var usersObject = snapshot.val();
@@ -58,8 +58,14 @@ function getBalances() {
     var i = 0;
     _.each(usersObject, function(user,uid) {
       if (user.wallet && user.wallet.publicKey) {
-        var currentBalanceAmount = web3.eth.getBalance(user.wallet.publicKey).toString();
-        if (!user.wallet.currentBalance || currentBalanceAmount != user.wallet.currentBalance.amount) {
+        var newBalanceAmount;
+        try {
+          newBalanceAmount = web3.eth.getBalance(user.wallet.publicKey).toString();
+        } catch(err) {
+          console.log("warning: unable to get UR balance for address ", user.wallet.publicKey);
+        }
+        var currentBalanceAmount = user.wallet.currentBalance ? user.wallet.currentBalance.amount : undefined;
+        if (newBalanceAmount && newBalanceAmount != currentBalanceAmount) {
           var newBalanceInfo = {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP};
           usersRef.child(uid).child("wallet").child("currentBalance").update(
             {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP}
@@ -89,7 +95,6 @@ function handleURMoneyTasks() {
 
     // find user with the same phone as this verification
     console.log("processing phone verification for " + phoneVerification.phone);
-    console.log("phoneVerification: ", phoneVerification);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
 
       if (!_.isUndefined(phoneVerification.smsSuccess)) {
