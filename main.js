@@ -89,6 +89,7 @@ function handleURMoneyTasks() {
 
     // find user with the same phone as this verification
     console.log("processing phone verification for " + phoneVerification.phone);
+    console.log("phoneVerification: ", phoneVerification);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
 
       if (!_.isUndefined(phoneVerification.smsSuccess)) {
