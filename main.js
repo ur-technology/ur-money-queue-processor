@@ -12,7 +12,6 @@ var FirebaseTokenGenerator = require("firebase-token-generator");
 var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
-var Web3 = require('web3');
 
 // handleURMoneyTasks(); // uncomment this line for testing in development
 // handleURCapitalAppTasks(); // uncomment this line for testing in development
@@ -32,7 +31,6 @@ if (environment == "development") {
 function start(id) {
   console.log('worker started ' + id);
 
-  getBalances();
   handleURCapitalAppTasks();
   handleURMoneyTasks();
 
@@ -46,45 +44,6 @@ function start(id) {
 //////////////////////////////////////////////
 // task handler functions
 //////////////////////////////////////////////
-
-
-function getBalances() {
-  var web3 = new Web3();
-  web3.setProvider(new web3.providers.HttpProvider('http://45.33.72.14:9595'));
-
-  usersRef.once("value", function(snapshot) {
-    var usersObject = snapshot.val();
-    var numUsers = _.size(usersObject);
-    var i = 0;
-    _.each(usersObject, function(user,uid) {
-      if (user.wallet && user.wallet.publicKey) {
-        var newBalanceAmount;
-        try {
-          newBalanceAmount = web3.eth.getBalance(user.wallet.publicKey).toString();
-        } catch(err) {
-          console.log("warning: unable to get UR balance for address ", user.wallet.publicKey);
-        }
-        var currentBalanceAmount = user.wallet.currentBalance ? user.wallet.currentBalance.amount : undefined;
-        if (newBalanceAmount && newBalanceAmount != currentBalanceAmount) {
-          var newBalanceInfo = {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP};
-          usersRef.child(uid).child("wallet").child("currentBalance").update(
-            {amount: currentBalanceAmount, updatedAt: Firebase.ServerValue.TIMESTAMP}
-          ).then(() => {
-            usersRef.child(uid).child("wallet").child("currentBalance").once("value", function(snapshot) {
-              var currentBalanceRecord = snapshot.val();
-              usersRef.child(uid).child("wallet").child("balanceHistory").push(currentBalanceRecord);
-            });
-          });
-        }
-      }
-      i++;
-      if (i == numUsers) {
-        var thirtySeconds = 30 * 1000;
-        setTimeout(getBalances, thirtySeconds);
-      }
-    });
-  });
-}
 
 function handleURMoneyTasks() {
 
