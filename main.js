@@ -14,7 +14,7 @@ var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
 // handleURMoneyTasks(); // uncomment this line for testing in development
-// handleURCapitalAppTasks(); // uncomment this line for testing in development
+// handlePrelaunchTasks(); // uncomment this line for testing in development
 
 var environment = process.env.NODE_ENV || "development"
 console.log("starting with environment " + environment);
@@ -31,7 +31,7 @@ if (environment == "development") {
 function start(id) {
   console.log('worker started ' + id);
 
-  handleURCapitalAppTasks();
+  handlePrelaunchTasks();
   handleURMoneyTasks();
 
   process.on('SIGTERM', function () {
@@ -73,7 +73,11 @@ function handleURMoneyTasks() {
 
       // send sms to user with verification code
       var verificationCode = generateVerificationCode();
-      sendMessage(phoneVerification.phone, "Your UR Money verification code is " + verificationCode, function() {
+      sendMessage(phoneVerification.phone, "Your UR Money verification code is " + verificationCode, function(error) {
+        if (error) {
+          phoneVerificationRef.update({smsSuccess: false, smsError: error});
+          return;
+        }
 
         // save verificationCode and let user know sms was sent
         phoneVerificationRef.update({smsSuccess: true, verificationCode: verificationCode}).then( () => {
@@ -116,7 +120,7 @@ function handleURMoneyTasks() {
   });
 };
 
-function handleURCapitalAppTasks() {
+function handlePrelaunchTasks() {
   // get all users invited in the last day
   var oneDayAgo = moment().add(-1, 'day').valueOf();
   _.each(["child_added", "child_changed"], function(event) {
@@ -153,7 +157,8 @@ function sendMessage(phone, messageText, callback) {
     body: messageText
   }, function(error, message) {
     if (error) {
-      console.log("error sending message '" + message + "'", error);
+      error = "error sending message '" + message + "' (" + error + ")";
+      console.log(error);
     } else {
       console.log("sent message '" + messageText + "' to '" + phone + "'");
     }
