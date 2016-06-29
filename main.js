@@ -15,6 +15,7 @@ var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process
 
 // handleURMoneyTasks(); // uncomment this line for testing in development
 // handlePrelaunchTasks(); // uncomment this line for testing in development
+// handleBlast(); // uncomment this line for testing in development
 
 var environment = process.env.NODE_ENV || "development"
 console.log("starting with environment " + environment);
@@ -119,6 +120,24 @@ function handleURMoneyTasks() {
     });
   });
 };
+
+function handleBlast() {
+  usersRef.orderByChild("invitedAt").on("child_added", function(snapshot) {
+    var user = snapshot.val();
+    var text;
+    if (user.signedUpAt) {
+      text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
+    } else {
+      text = "This is a reminder that John Doe has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
+    }
+    text = text + " " + prelaunchReferralUrl();
+    sendMessage(user.phone, text, function(error) {
+      if (!error) {
+        usersRef.child(user.uid).update(user.signedUpAt ? {resentSignUpMessageAt: Firebase.ServerValue.TIMESTAMP} : {resentInvitationMessageAt: Firebase.ServerValue.TIMESTAMP});
+      }
+    });
+  });
+}
 
 function handlePrelaunchTasks() {
   // get all users invited in the last day
