@@ -168,19 +168,19 @@ function sendMessage(phone, messageText, callback) {
   });
 }
 
-function prelaunchReferralUrl(user) {
-  return "https://signup.ur.capital/go/" + user.phone.replace(/^(\+1|1)/,"");
+function prelaunchReferralUrl() {
+  return "http://bet.ur.capital";
 }
 
 function sendInvitationMessage(user) {
-  var messageText = fullName(user.sponsor) + " invites you to be a beta tester for UR Capital! " + prelaunchReferralUrl(user);
+  var messageText = fullName(user.sponsor) + " invites you to be a beta tester for UR Capital! As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency! " + prelaunchReferralUrl();
   sendMessage(user.phone, messageText, function(error) {
     usersRef.child(user.uid).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
   });
 };
 
 function sendSignUpMessages(user) {
-  var welcomeMessageText = "Congratulations on being part of the UR Capital beta program! Build status by referring friends: " + prelaunchReferralUrl(user);
+  var welcomeMessageText = "Congratulations on being part of the UR Capital beta program! We look forward to your participation and feedback in the coming weeks. Remember to build your status—and increase your rewards—by referring friends here: " + prelaunchReferralUrl();
   sendMessage(user.phone, welcomeMessageText, function(error) {
     updateInfo = error ? {signUpMessagesFailedAt: Firebase.ServerValue.TIMESTAMP} : {signUpMessagesSentAt: Firebase.ServerValue.TIMESTAMP};
     usersRef.child(user.uid).update(updateInfo, function(error) {
