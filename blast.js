@@ -13,8 +13,16 @@ var usersRef = firebaseRef.child("users");
 doBlast();
 
 function doBlast() {
+  var messageName = "updated-url";
   usersRef.orderByChild("invitedAt").on("child_added", function(userSnapshot) {
     var user = userSnapshot.val();
+    var alreadySent = _.any(user.smsMessages, function(message,messageId) {
+      return message.name == messageName;
+    });
+    if (alreadySent) {
+      return;
+    }
+
     var text;
     if (user.signedUpAt) {
       text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
@@ -23,12 +31,24 @@ function doBlast() {
     }
     text = text + " " + prelaunchReferralUrl();
     userSnapshot.ref().child("smsMessages").push({
-      type: "updated-url"
-      subType: user.signedUpAt ? "signUp" : "invitation"
+      name: messageName,
+      type: user.signedUpAt ? "signUp" : "invitation",
       createdAt: Firebase.ServerValue.TIMESTAMP,
       sendAttempted: false,
       phone: user.phone,
-      text: text,
+      text: text
     });
   });
+}
+
+//////////////////////////////////////////////
+// helper functions
+//////////////////////////////////////////////
+
+function fullName(user) {
+  return user.firstName + " " + user.lastName;
+}
+
+function prelaunchReferralUrl() {
+  return "http://beta.ur.capital";
 }
