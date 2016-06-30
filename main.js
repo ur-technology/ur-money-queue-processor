@@ -13,10 +13,6 @@ var usersRef = firebaseRef.child("users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
-// handleURMoneyTasks(); // uncomment this line for testing in development
-// handlePrelaunchTasks(); // uncomment this line for testing in development
-// handleBlast(); // uncomment this line for testing in development
-
 var environment = process.env.NODE_ENV || "development"
 console.log("starting with environment " + environment);
 if (environment == "development") {
@@ -34,6 +30,7 @@ function start(id) {
 
   handlePrelaunchTasks();
   handleURMoneyTasks();
+  processQueuedSmsMessages();
 
   process.on('SIGTERM', function () {
     console.log(`Worker ${ id } exiting...`);
@@ -121,20 +118,17 @@ function handleURMoneyTasks() {
   });
 };
 
-function handleBlast() {
-  usersRef.orderByChild("invitedAt").on("child_added", function(snapshot) {
-    var user = snapshot.val();
-    var text;
-    if (user.signedUpAt) {
-      text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
-    } else {
-      text = "This is a reminder that John Doe has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
-    }
-    text = text + " " + prelaunchReferralUrl();
-    sendMessage(user.phone, text, function(error) {
-      if (!error) {
-        usersRef.child(user.uid).update(user.signedUpAt ? {resentSignUpMessageAt: Firebase.ServerValue.TIMESTAMP} : {resentInvitationMessageAt: Firebase.ServerValue.TIMESTAMP});
-      }
+function processQueuedSmsMessages() {
+  usersRef.orderByChild("invitedAt").on("child_added", function(userSnapshot) {
+    userSnapshot.ref().child("smsMessages").orderByChild("sendAttempted").equalTo(false).on("child_added", function(smsMessageSnapshot) {
+      var smsMessage = smsMessageSnapshot.val();
+      sendMessage(smsMessage.phone, smsMessage.text, function(error) {
+        smsMessageSnapshot.ref().update({
+          sendAttempted: true,
+          sendAttemptedAt: Firebase.ServerValue.TIMESTAMP,
+          error: error
+        });
+      });
     });
   });
 }
@@ -170,7 +164,7 @@ function fullName(user) {
 }
 
 function sendMessage(phone, messageText, callback) {
-  twilioClient.sms.messages.create({
+  twilioClient.messages.create({
     to: phone,
     from: process.env.twilio_from_number,
     body: messageText
@@ -188,7 +182,7 @@ function sendMessage(phone, messageText, callback) {
 }
 
 function prelaunchReferralUrl() {
-  return "http://bet.ur.capital";
+  return "http://beta.ur.capital";
 }
 
 function sendInvitationMessage(user) {
