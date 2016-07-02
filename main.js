@@ -168,9 +168,9 @@ function sendMessage(phone, messageText, callback) {
     to: phone,
     from: process.env.twilio_from_number,
     body: messageText
-  }, function(error, message) {
+  }, function(error) {
     if (error) {
-      error = "error sending message '" + message + "' (" + error + ")";
+      error = "error sending message '" + messageText + "' (" + error.message + ")";
       console.log(error);
     } else {
       console.log("sent message '" + messageText + "' to '" + phone + "'");
