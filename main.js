@@ -2,14 +2,20 @@ require('dotenv').load(); //load envirumnet vars
 
 var throng = require('throng');
 var _ = require('underscore');
+_.mixin({
+  isDefined: function(reference) {
+    return !_.isUndefined(reference);
+  }
+});
 var s = require('underscore.string');
 var moment = require('moment');
-var Firebase = require("firebase");
-var firebaseUrl = process.env.NODE_ENV == 'production' ? process.env.firebase_url_production : process.env.firebase_url_dev;
 var firebaseSecret = process.env.NODE_ENV == 'production' ? process.env.firebase_secret_production : process.env.firebase_secret_dev;
-var firebaseRef = new Firebase(firebaseUrl);
-var FirebaseTokenGenerator = require("firebase-token-generator");
-var usersRef = firebaseRef.child("users");
+var firebase = require("firebase");
+firebase.initializeApp({
+  serviceAccount: "./serviceAccountCredentials.json",
+  databaseURL: "https://ur-money-staging.firebaseio.com"
+});
+var usersRef = firebase.database().ref("/users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
@@ -46,15 +52,15 @@ function start(id) {
 function handleURMoneyTasks() {
 
   // send out verification codes for all new phone verifications
-  firebaseRef.child("phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
-    var phoneVerificationRef = phoneVerificationSnapshot.ref();
+  firebase.database().ref("/phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
+    var phoneVerificationRef = phoneVerificationSnapshot.ref;
     var phoneVerification = phoneVerificationSnapshot.val();
 
     // find user with the same phone as this verification
     console.log("processing phone verification for " + phoneVerification.phone);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
 
-      if (!_.isUndefined(phoneVerification.smsSuccess)) {
+      if (_.isDefined(phoneVerification.smsSuccess)) {
         // this record was already processed
         console.log("phone verification for " + phoneVerification.phone + " was already processed - skipping");
         return;
@@ -89,7 +95,7 @@ function handleURMoneyTasks() {
             }
 
             var updatedPhoneVerification = updatedPhoneVerificationSnapshot.val();
-            if (!_.isUndefined(updatedPhoneVerification.verificationSuccess)) {
+            if (_.isDefined(updatedPhoneVerification.verificationSuccess)) {
               console.log("phoneVerification.verificationSuccess already set for " + phoneVerification.phone + " - skipping");
               // this record was already processed
               return;
@@ -101,11 +107,10 @@ function handleURMoneyTasks() {
               return;
             }
 
-            var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref();
+            var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
             if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
-              var tokenGenerator = new FirebaseTokenGenerator(firebaseSecret);
-              var authToken = tokenGenerator.createToken({uid: uid, some: "arbitrary", data: "here"});
               console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
+              var authToken = firebase.auth().createCustomToken(uid, {some: "arbitrary", data: "here"});
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
             } else {
               console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
@@ -120,10 +125,10 @@ function handleURMoneyTasks() {
 
 function processQueuedSmsMessages() {
   usersRef.orderByChild("invitedAt").on("child_added", function(userSnapshot) {
-    userSnapshot.ref().child("smsMessages").orderByChild("sendAttempted").equalTo(false).on("child_added", function(smsMessageSnapshot) {
+    userSnapshot.ref.child("smsMessages").orderByChild("sendAttempted").equalTo(false).on("child_added", function(smsMessageSnapshot) {
       var smsMessage = smsMessageSnapshot.val();
       sendMessage(smsMessage.phone, smsMessage.text, function(error) {
-        smsMessageSnapshot.ref().update({
+        smsMessageSnapshot.ref.update({
           sendAttempted: true,
           sendAttemptedAt: Firebase.ServerValue.TIMESTAMP,
           error: error
@@ -227,3 +232,32 @@ function generateVerificationCode() {
   var num = Math.floor(Math.random() * (max - min + 1)) + min;
   return '' + num;
 };
+
+function doBlast() {
+  var messageName = "updated-url";
+  usersRef.orderByChild("invitedAt").on("child_added", function(userSnapshot) {
+    var user = userSnapshot.val();
+    var alreadySent = _.any(user.smsMessages, function(message,messageId) {
+      return message.name == messageName;
+    });
+    if (alreadySent) {
+      return;
+    }
+
+    var text;
+    if (user.signedUpAt) {
+      text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
+    } else {
+      text = "This is a reminder that " + fullName(user.sponsor) + " has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
+    }
+    text = text + " " + prelaunchReferralUrl();
+    userSnapshot.ref.child("smsMessages").push({
+      name: messageName,
+      type: user.signedUpAt ? "signUp" : "invitation",
+      createdAt: Firebase.ServerValue.TIMESTAMP,
+      sendAttempted: false,
+      phone: user.phone,
+      text: text
+    });
+  });
+}
