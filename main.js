@@ -56,6 +56,11 @@ function handleURMoneyTasks() {
     var phoneVerificationRef = phoneVerificationSnapshot.ref;
     var phoneVerification = phoneVerificationSnapshot.val();
 
+    if (_.isUndefined(phoneVerification.phone)) {
+      console.log("no phone in phoneVerification record " + phoneVerificationSnapshot.key + " - skipping");
+      return;
+    }
+
     // find user with the same phone as this verification
     console.log("processing phone verification for " + phoneVerification.phone);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
