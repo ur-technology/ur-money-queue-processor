@@ -9,34 +9,32 @@ _.mixin({
 });
 var s = require('underscore.string');
 var moment = require('moment');
-var firebaseSecret = process.env.NODE_ENV == 'production' ? process.env.firebase_secret_production : process.env.firebase_secret_dev;
 var firebase = require("firebase");
 firebase.initializeApp({
-  serviceAccount: "./serviceAccountCredentials.json",
-  databaseURL: "https://ur-money-staging.firebaseio.com"
+  serviceAccount: `./serviceAccountCredentials.${process.env.NODE_ENV}.json`,
+  databaseURL: `https://ur-money-${process.env.NODE_ENV}.firebaseio.com`
 });
+
 var usersRef = firebase.database().ref("/users");
 var twilio = require('twilio');
 var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
 
-var environment = process.env.NODE_ENV || "development"
-console.log("starting with environment " + environment);
-if (environment == "development") {
-    // development environment
-    start(1);
-} else {
-  // staging or production environment
+console.log("starting with environment " + process.env.NODE_ENV);
+if (process.env.NODE_ENV == "staging" || process.env.NODE_ENV == "production") {
   throng(start, {
     workers : 1
   });
+} else {
+  start(1);
 }
 
 function start(id) {
   console.log('worker started ' + id);
 
-  handlePrelaunchTasks();
-  handleURMoneyTasks();
-  processQueuedSmsMessages();
+  // handlePrelaunchTasks();
+  processNewChatData();
+  doPhoneVerification();
+  // processQueuedSmsMessages();
 
   process.on('SIGTERM', function () {
     console.log(`Worker ${ id } exiting...`);
@@ -49,7 +47,7 @@ function start(id) {
 // task handler functions
 //////////////////////////////////////////////
 
-function handleURMoneyTasks() {
+function doPhoneVerification() {
 
   // send out verification codes for all new phone verifications
   firebase.database().ref("/phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
@@ -77,8 +75,8 @@ function handleURMoneyTasks() {
         phoneVerificationRef.update({smsSuccess: false, smsError: "No user account or invitation was found matching the given phone number."});
         return;
       }
-      var uid = _.keys(usersSnapshot.val())[0]; // get uid of first user with matching phone
-      console.log("matching user with uid " + uid + " found for " + phoneVerification.phone);
+      var userId = _.keys(usersSnapshot.val())[0]; // get userId of first user with matching phone
+      console.log("matching user with userId " + userId + " found for " + phoneVerification.phone);
 
       // send sms to user with verification code
       var verificationCode = generateVerificationCode();
@@ -115,7 +113,7 @@ function handleURMoneyTasks() {
             var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
             if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
               console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
-              var authToken = firebase.auth().createCustomToken(uid, {some: "arbitrary", data: "here"});
+              var authToken = firebase.auth().createCustomToken(userId, {some: "arbitrary", data: "here"});
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
             } else {
               console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
@@ -127,6 +125,20 @@ function handleURMoneyTasks() {
     });
   });
 };
+
+function processNewChatData() {
+  // loop through all chats for all users
+  _.each(["child_added", "child_changed"], function(childEvent) {
+    usersRef.orderByChild("createdAt").on(childEvent, function(userSnapshot) { // TODO: restrict to recently created ones
+      var user = userSnapshot.val();
+      _.each(user.chatSummaries || {}, function(chatSummary, chatId) {
+        if (chatSummary.needsToBeCopied || (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied)) {
+          copyChatSummaryAndLastMessage(chatSummary, chatId);
+        }
+      });
+    });
+  });
+}
 
 function processQueuedSmsMessages() {
   usersRef.orderByChild("invitedAt").on("child_added", function(userSnapshot) {
@@ -166,8 +178,40 @@ function handlePrelaunchTasks() {
 
 
 //////////////////////////////////////////////
-// helper functions
+// private functions
 //////////////////////////////////////////////
+
+function copyChatSummaryAndLastMessage(chatSummary, chatId) {
+  var creatorUserId = chatSummary.creatorUserId;
+  var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
+  _.each(otherUserIds, function(otherUserId, index) {
+    if (chatSummary.needsToBeCopied) {
+      // copy chat summary to other user (but change display user to be the chatSummary creator)
+      var chatSummaryCopy = _.extend(_.omit(chatSummary, 'needsToBeCopied'), {displayUserId: creatorUserId});
+      chatSummaryCopy.lastMessage = _.omit(chatSummary.lastMessage, 'needsToBeCopied');
+      usersRef.child(otherUserId).child("chatSummaries").child(chatId).set(chatSummaryCopy);
+    }
+    if (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied) {
+      if (!chatSummary.needsToBeCopied) {
+        // copy last message to chat summary of other user if this was not already done
+        var lastMessageCopy = _.omit(chatSummary.lastMessage, 'needsToBeCopied');
+        usersRef.child(otherUserId).child("chatSummaries").child(chatId).update({lastMessage: lastMessageCopy});
+      }
+
+      // also append copy of last message to the chat messages collection of other user
+      lastMessageCopy = _.omit(chatSummary.lastMessage, ['needsToBeCopied', 'messageId']);
+      usersRef.child(otherUserId).child("chats").child(chatId).child("messages").child(chatSummary.lastMessage.messageId).set(lastMessageCopy);
+    }
+  });
+  if (chatSummary.needsToBeCopied) {
+    // mark chatSummary as no longer needing to be copied
+    usersRef.child(creatorUserId).child("chatSummaries").child(chatId).child("needsToBeCopied").remove();
+  }
+  if (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied) {
+    // mark lastMessage as no longer needing to be copied
+    usersRef.child(creatorUserId).child("chatSummaries").child(chatId).child("lastMessage").child("needsToBeCopied").remove();
+  }
+}
 
 function fullName(user) {
   return user.firstName + " " + user.lastName;
@@ -198,7 +242,7 @@ function prelaunchReferralUrl() {
 function sendInvitationMessage(user) {
   var messageText = fullName(user.sponsor) + " invites you to be a beta tester of a new mobile app, UR Money! " + prelaunchReferralUrl();
   sendMessage(user.phone, messageText, function(error) {
-    usersRef.child(user.uid).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
+    usersRef.child(user.userId).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
   });
 };
 
@@ -206,16 +250,16 @@ function sendSignUpMessages(user) {
   var welcomeMessageText = "Congrats on being part of the UR Money beta program! Build status and increase your rewards by referring friends here: " + prelaunchReferralUrl();
   sendMessage(user.phone, welcomeMessageText, function(error) {
     updateInfo = error ? {signUpMessagesFailedAt: Firebase.ServerValue.TIMESTAMP} : {signUpMessagesSentAt: Firebase.ServerValue.TIMESTAMP};
-    usersRef.child(user.uid).update(updateInfo, function(error) {
+    usersRef.child(user.userId).update(updateInfo, function(error) {
       if (user.sponsor) {
-        sendUplineSignUpMessages(user, null, user.sponsor.uid, 1);
+        sendUplineSignUpMessages(user, null, user.sponsor.userId, 1);
       }
     });
   });
 };
 
-function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUid, uplineLevel) {
-  usersRef.child(uplineUid).once("value", function(snapshot) {
+function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUserId, uplineLevel) {
+  usersRef.child(uplineUserId).once("value", function(snapshot) {
     var uplineUser = snapshot.val();
     var messageText = "Your status has been updated because ";
     if (newUserSponsor) {
@@ -226,7 +270,7 @@ function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUid, uplineLeve
     }
     sendMessage(uplineUser.phone, messageText);
     if (uplineLevel < 7 && uplineUser.sponsor) {
-      sendUplineSignUpMessages(newUser, newUserSponsor, uplineUser.sponsor.uid, uplineLevel + 1);
+      sendUplineSignUpMessages(newUser, newUserSponsor, uplineUser.sponsor.userId, uplineLevel + 1);
     }
   });
 };
