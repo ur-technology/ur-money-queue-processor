@@ -1,5 +1,8 @@
 require('dotenv').load(); // load environment vars
 
+var log = require('loglevel');
+log.setDefaultLevel(process.env.DEFAULT_LOG_LEVEL)
+
 var throng = require('throng');
 var _ = require('underscore');
 _.mixin({
@@ -11,15 +14,15 @@ var s = require('underscore.string');
 var moment = require('moment');
 var firebase = require("firebase");
 firebase.initializeApp({
-  serviceAccount: `./serviceAccountCredentials.${process.env.NODE_ENV}.json`,
-  databaseURL: `https://ur-money-${process.env.NODE_ENV}.firebaseio.com`
+  serviceAccount: `./serviceAccountCredentials.${process.env.FIREBASE_PROJECT_ID}.json`,
+  databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
 });
 
 var usersRef = firebase.database().ref("/users");
 var twilio = require('twilio');
-var twilioClient = new twilio.RestClient(process.env.twilio_account_sid, process.env.twilio_auth_token);
+var twilioClient = new twilio.RestClient(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-console.log("starting with environment " + process.env.NODE_ENV);
+log.info(`starting with NODE_ENV ${process.env.NODE_ENV} and FIREBASE_PROJECT_ID ${process.env.FIREBASE_PROJECT_ID}`);
 if (process.env.NODE_ENV == "staging" || process.env.NODE_ENV == "production") {
   throng(start, {
     workers : 1
@@ -29,14 +32,14 @@ if (process.env.NODE_ENV == "staging" || process.env.NODE_ENV == "production") {
 }
 
 function start(id) {
-  console.log('worker started ' + id);
+  log.info('worker started ' + id);
 
   processNewChatData();
   doPhoneVerification();
   processQueuedSmsMessages();
 
   process.on('SIGTERM', function () {
-    console.log(`Worker ${ id } exiting...`);
+    log.info(`Worker ${ id } exiting...`);
     process.exit();
   });
 
@@ -54,33 +57,34 @@ function doPhoneVerification() {
     var phoneVerification = phoneVerificationSnapshot.val();
 
     if (_.isUndefined(phoneVerification.phone)) {
-      console.log("no phone in phoneVerification record " + phoneVerificationSnapshot.key + " - skipping");
+      log.warn("no phone in phoneVerification record " + phoneVerificationSnapshot.key + " - skipping");
       return;
     }
 
     // find user with the same phone as this verification
-    console.log("processing phone verification for " + phoneVerification.phone);
+    log.debug("processing phone verification for " + phoneVerification.phone);
     usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
 
       if (_.isDefined(phoneVerification.smsSuccess)) {
         // this record was already processed
-        console.log("phone verification for " + phoneVerification.phone + " was already processed - skipping");
+        log.debug("phone verification for " + phoneVerification.phone + " was already processed - skipping");
         return;
       }
 
       if (!usersSnapshot.exists()) {
         // let user know no sms was sent because of an error
-        console.log("no matching user found for " + phoneVerification.phone + " - skipping");
-        phoneVerificationRef.update({smsSuccess: false, smsError: "No user account or invitation was found matching the given phone number."});
+        log.info("no matching user found for " + phoneVerification.phone + " - skipping");
+        phoneVerificationRef.update({smsSuccess: false, smsError: "Use of UR Money is currently available by invitation only, and you phone number was not on the invitee list."});
         return;
       }
       var userId = _.keys(usersSnapshot.val())[0]; // get userId of first user with matching phone
-      console.log("matching user with userId " + userId + " found for " + phoneVerification.phone);
+      log.debug("matching user with userId " + userId + " found for " + phoneVerification.phone);
 
       // send sms to user with verification code
       var verificationCode = generateVerificationCode();
       sendMessage(phoneVerification.phone, "Your UR Money verification code is " + verificationCode, function(error) {
         if (error) {
+          log.warn("error sending message to user with userId " + userId + " and phone " + phoneVerification.phone, error);
           phoneVerificationRef.update({smsSuccess: false, smsError: error});
           return;
         }
@@ -92,30 +96,30 @@ function doPhoneVerification() {
           phoneVerificationRef.on("value", function(updatedPhoneVerificationSnapshot) {
             if (!updatedPhoneVerificationSnapshot.exists()) {
               // record was deleted
-              console.log("phoneVerification record unexpectedly deleted for  " + phoneVerification.phone + " - skipping");
+              log.warn("phoneVerification record unexpectedly deleted for  " + phoneVerification.phone + " - skipping");
               return;
             }
 
             var updatedPhoneVerification = updatedPhoneVerificationSnapshot.val();
             if (_.isDefined(updatedPhoneVerification.verificationSuccess)) {
-              console.log("phoneVerification.verificationSuccess already set for " + phoneVerification.phone + " - skipping");
+              log.info("phoneVerification.verificationSuccess already set for " + phoneVerification.phone + " - skipping");
               // this record was already processed
               return;
             }
 
             if (_.isUndefined(updatedPhoneVerification.attemptedVerificationCode)) {
-              console.log("phoneVerification.attemptedVerificationCode not set for " + phoneVerification.phone + " - skipping");
-              // attemptedVerificationCode not yet set
+              // attemptedVerificationCode not yet set, need to keep waiting
+              log.debug("phoneVerification.attemptedVerificationCode not set for " + phoneVerification.phone + " - skipping");
               return;
             }
 
             var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
             if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
-              console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
+              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
               var authToken = firebase.auth().createCustomToken(userId, {some: "arbitrary", data: "here"});
               updatedPhoneVerificationRef.update({verificationSuccess: true, authToken: authToken});
             } else {
-              console.log("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
+              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
               updatedPhoneVerificationRef.update({verificationSuccess: false});
             }
           });
@@ -159,44 +163,63 @@ function processQueuedSmsMessages() {
 //////////////////////////////////////////////
 
 function makeCopyOfChatInfoForOtherUsers(chatSummary, chatId) {
-  var creatorUserId = chatSummary.creatorUserId;
-  var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
-  _.each(otherUserIds, function(otherUserId, index) {
-    if (chatSummary.needsToBeCopied) {
-      // copy chat summary to other user (but change display user to be the chatSummary creator)
+  var destinationRef;
+  if (chatSummary.needsToBeCopied) {
+    var creatorUserId = chatSummary.creatorUserId;
+
+    // copy chat summary to all participants other than the creator
+    var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
+    _.each(otherUserIds, function(otherUserId, index) {
       var chatSummaryCopy = _.extend(_.omit(chatSummary, 'needsToBeCopied'), {displayUserId: creatorUserId});
       chatSummaryCopy.lastMessage = _.omit(chatSummary.lastMessage, 'needsToBeCopied');
-      usersRef.child(otherUserId).child("chatSummaries").child(chatId).set(chatSummaryCopy);
-    }
-    if (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied) {
+      var destinationRef = usersRef.child(otherUserId).child("chatSummaries").child(chatId);
+      destinationRef.set(chatSummaryCopy);
+      log.debug(`copied chatSummary to ${destinationRef.toString()}`);
+    });
+
+    // mark chatSummary as no longer needing to be copied
+    var destinationRef = usersRef.child(creatorUserId).child("chatSummaries").child(chatId).child("needsToBeCopied");
+    destinationRef.remove();
+    log.debug(`marked chatSummary at ${destinationRef.toString()} as no longer needing to be copied` );
+  }
+
+  // create various copies of last message for all participants other than the sender
+  if (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied) {
+    var senderUserId = chatSummary.lastMessage.senderUserId;
+    var otherUserIds = _.without(_.keys(chatSummary.users), senderUserId);
+    _.each(otherUserIds, function(otherUserId, index) {
+
       if (!chatSummary.needsToBeCopied) {
-        // copy last message to chat summary of other user if this was not already done
+        // copy last message to chat summary of other user unless this was already done above
         var lastMessageCopy = _.omit(chatSummary.lastMessage, 'needsToBeCopied');
-        usersRef.child(otherUserId).child("chatSummaries").child(chatId).update({lastMessage: lastMessageCopy});
+        destinationRef = usersRef.child(otherUserId).child("chatSummaries").child(chatId).child("lastMessage");
+        destinationRef.set(lastMessageCopy);
+        log.debug(`copied lastMessage to ${destinationRef.toString()}`);
       }
 
       // append copy of last message to the chat messages collection of other user
-      lastMessageCopy = _.omit(chatSummary.lastMessage, ['needsToBeCopied', 'messageId']);
-      usersRef.child(otherUserId).child("chats").child(chatId).child("messages").child(chatSummary.lastMessage.messageId).set(lastMessageCopy);
+      var lastMessageCopy = _.omit(chatSummary.lastMessage, ['needsToBeCopied', 'messageId']);
+      destinationRef = usersRef.child(otherUserId).child("chats").child(chatId).child("messages").child(chatSummary.lastMessage.messageId);
+      destinationRef.set(lastMessageCopy);
+      log.debug(`copied lastMessage to ${destinationRef.toString()}`);
 
       // create notification for other user
-      var sender = chatSummary.users[chatSummary.lastMessage.senderUserId];
-      usersRef.child(otherUserId).child("notifications").push({
+      var sender = chatSummary.users[senderUserId];
+      destinationRef = usersRef.child(otherUserId).child("notifications");
+      destinationRef.push({
         senderName: `${sender.firstName} ${sender.lastName}`,
         profilePhotoUrl: sender.profilePhotoUrl ? sender.profilePhotoUrl : "",
         text: chatSummary.lastMessage.text,
-        chatId: chatId
+        chatId: chatId,
+        messageId: chatSummary.lastMessage.messageId
       });
+      log.debug(`pushed notification to ${destinationRef.toString()}`);
+    });
 
-    }
-  });
-  if (chatSummary.needsToBeCopied) {
-    // mark chatSummary as no longer needing to be copied
-    usersRef.child(creatorUserId).child("chatSummaries").child(chatId).child("needsToBeCopied").remove();
-  }
-  if (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied) {
     // mark lastMessage as no longer needing to be copied
-    usersRef.child(creatorUserId).child("chatSummaries").child(chatId).child("lastMessage").child("needsToBeCopied").remove();
+    destinationRef = usersRef.child(senderUserId).child("chatSummaries").child(chatId).child("lastMessage").child("needsToBeCopied");
+    destinationRef.remove();
+    log.debug(`marked lastMessage at ${destinationRef.toString()} as no longer needing to be copied` );
   }
 }
 
@@ -207,14 +230,14 @@ function fullName(user) {
 function sendMessage(phone, messageText, callback) {
   twilioClient.messages.create({
     to: phone,
-    from: process.env.twilio_from_number,
+    from: process.env.TWILIO_FROM_NUMBER,
     body: messageText
   }, function(error) {
     if (error) {
       error = "error sending message '" + messageText + "' (" + error.message + ")";
-      console.log(error);
+      log.debug(error);
     } else {
-      console.log("sent message '" + messageText + "' to '" + phone + "'");
+      log.debug("sent message '" + messageText + "' to '" + phone + "'");
     }
     if (callback) {
       callback(error);
