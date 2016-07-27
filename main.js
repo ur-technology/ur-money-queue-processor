@@ -1,4 +1,4 @@
-require('dotenv').load(); //load envirumnet vars
+require('dotenv').load(); // load environment vars
 
 var throng = require('throng');
 var _ = require('underscore');
@@ -132,7 +132,7 @@ function processNewChatData() {
       var user = userSnapshot.val();
       _.each(user.chatSummaries || {}, function(chatSummary, chatId) {
         if (chatSummary.needsToBeCopied || (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied)) {
-          copyChatSummaryAndLastMessage(chatSummary, chatId);
+          makeCopyOfChatInfoForOtherUsers(chatSummary, chatId);
         }
       });
     });
@@ -158,7 +158,7 @@ function processQueuedSmsMessages() {
 // private functions
 //////////////////////////////////////////////
 
-function copyChatSummaryAndLastMessage(chatSummary, chatId) {
+function makeCopyOfChatInfoForOtherUsers(chatSummary, chatId) {
   var creatorUserId = chatSummary.creatorUserId;
   var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
   _.each(otherUserIds, function(otherUserId, index) {
@@ -175,9 +175,19 @@ function copyChatSummaryAndLastMessage(chatSummary, chatId) {
         usersRef.child(otherUserId).child("chatSummaries").child(chatId).update({lastMessage: lastMessageCopy});
       }
 
-      // also append copy of last message to the chat messages collection of other user
+      // append copy of last message to the chat messages collection of other user
       lastMessageCopy = _.omit(chatSummary.lastMessage, ['needsToBeCopied', 'messageId']);
       usersRef.child(otherUserId).child("chats").child(chatId).child("messages").child(chatSummary.lastMessage.messageId).set(lastMessageCopy);
+
+      // create notification for other user
+      var sender = chatSummary.users[chatSummary.lastMessage.senderUserId];
+      usersRef.child(otherUserId).child("notifications").push({
+        senderName: `${sender.firstName} ${sender.lastName}`,
+        profilePhotoUrl: sender.profilePhotoUrl ? sender.profilePhotoUrl : "",
+        text: chatSummary.lastMessage.text,
+        chatId: chatId
+      });
+
     }
   });
   if (chatSummary.needsToBeCopied) {
