@@ -34,7 +34,7 @@ function start(id) {
   // handlePrelaunchTasks();
   processNewChatData();
   doPhoneVerification();
-  // processQueuedSmsMessages();
+  processQueuedSmsMessages();
 
   process.on('SIGTERM', function () {
     console.log(`Worker ${ id } exiting...`);
