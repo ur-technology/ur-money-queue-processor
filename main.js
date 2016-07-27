@@ -31,7 +31,6 @@ if (process.env.NODE_ENV == "staging" || process.env.NODE_ENV == "production") {
 function start(id) {
   console.log('worker started ' + id);
 
-  // handlePrelaunchTasks();
   processNewChatData();
   doPhoneVerification();
   processQueuedSmsMessages();
@@ -155,28 +154,6 @@ function processQueuedSmsMessages() {
   });
 }
 
-function handlePrelaunchTasks() {
-  // get all users invited in the last day
-  var oneDayAgo = moment().add(-1, 'day').valueOf();
-  _.each(["child_added", "child_changed"], function(event) {
-    usersRef.orderByChild("invitedAt").startAt(oneDayAgo).on(event, function(snapshot) {
-      var user = snapshot.val();
-      if (user.invitedAt && !user.signedUpAt && !user.invitationSmsSentAt && !user.invitationSmsFailedAt) {
-        sendInvitationMessage(user);
-      }
-    });
-  });
-
-  // get all users signed up in the last day
-  usersRef.orderByChild("signedUpAt").startAt(oneDayAgo).on("child_changed", function(snapshot) {
-    var user = snapshot.val();
-    if (user.signedUpAt && !user.signUpMessagesSentAt && !user.signUpMessagesFailedAt) {
-      sendSignUpMessages(user);
-    }
-  });
-}
-
-
 //////////////////////////////////////////////
 // private functions
 //////////////////////////////////////////////
@@ -235,46 +212,6 @@ function sendMessage(phone, messageText, callback) {
   });
 }
 
-function prelaunchReferralUrl() {
-  return "http://beta.ur.capital";
-}
-
-function sendInvitationMessage(user) {
-  var messageText = fullName(user.sponsor) + " invites you to be a beta tester of a new mobile app, UR Money! " + prelaunchReferralUrl();
-  sendMessage(user.phone, messageText, function(error) {
-    usersRef.child(user.userId).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
-  });
-};
-
-function sendSignUpMessages(user) {
-  var welcomeMessageText = "Congrats on being part of the UR Money beta program! Build status and increase your rewards by referring friends here: " + prelaunchReferralUrl();
-  sendMessage(user.phone, welcomeMessageText, function(error) {
-    updateInfo = error ? {signUpMessagesFailedAt: Firebase.ServerValue.TIMESTAMP} : {signUpMessagesSentAt: Firebase.ServerValue.TIMESTAMP};
-    usersRef.child(user.userId).update(updateInfo, function(error) {
-      if (user.sponsor) {
-        sendUplineSignUpMessages(user, null, user.sponsor.userId, 1);
-      }
-    });
-  });
-};
-
-function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUserId, uplineLevel) {
-  usersRef.child(uplineUserId).once("value", function(snapshot) {
-    var uplineUser = snapshot.val();
-    var messageText = "Your status has been updated because ";
-    if (newUserSponsor) {
-      messageText = messageText + " " + fullName(newUserSponsor) + " referred " + fullName(newUser) + " to be a beta tester for UR.capital!"
-    } else {
-      newUserSponsor = uplineUser
-      messageText = messageText + fullName(newUser) + " has signed up as a beta tester with UR.capital!"
-    }
-    sendMessage(uplineUser.phone, messageText);
-    if (uplineLevel < 7 && uplineUser.sponsor) {
-      sendUplineSignUpMessages(newUser, newUserSponsor, uplineUser.sponsor.userId, uplineLevel + 1);
-    }
-  });
-};
-
 function generateVerificationCode() {
   var min = 100000;
   var max = 999999;
@@ -299,7 +236,7 @@ function doBlast() {
     } else {
       text = "This is a reminder that " + fullName(user.sponsor) + " has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
     }
-    text = text + " " + prelaunchReferralUrl();
+    text = text + " put url here";
     userSnapshot.ref.child("smsMessages").push({
       name: messageName,
       type: user.signedUpAt ? "signUp" : "invitation",
