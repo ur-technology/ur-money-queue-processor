@@ -1,4 +1,4 @@
-require('dotenv').load(); //load envirumnet vars
+require('dotenv').load(); // load envirumnet vars
 
 var throng = require('throng');
 var _ = require('underscore');
@@ -31,10 +31,9 @@ if (process.env.NODE_ENV == "staging" || process.env.NODE_ENV == "production") {
 function start(id) {
   console.log('worker started ' + id);
 
-  // handlePrelaunchTasks();
   processNewChatData();
   doPhoneVerification();
-  // processQueuedSmsMessages();
+  processQueuedSmsMessages();
 
   process.on('SIGTERM', function () {
     console.log(`Worker ${ id } exiting...`);
@@ -133,7 +132,7 @@ function processNewChatData() {
       var user = userSnapshot.val();
       _.each(user.chatSummaries || {}, function(chatSummary, chatId) {
         if (chatSummary.needsToBeCopied || (chatSummary.lastMessage && chatSummary.lastMessage.needsToBeCopied)) {
-          copyChatSummaryAndLastMessage(chatSummary, chatId);
+          makeCopyOfChatInfoForOtherUsers(chatSummary, chatId);
         }
       });
     });
@@ -181,7 +180,7 @@ function handlePrelaunchTasks() {
 // private functions
 //////////////////////////////////////////////
 
-function copyChatSummaryAndLastMessage(chatSummary, chatId) {
+function makeCopyOfChatInfoForOtherUsers(chatSummary, chatId) {
   var creatorUserId = chatSummary.creatorUserId;
   var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
   _.each(otherUserIds, function(otherUserId, index) {
@@ -198,9 +197,18 @@ function copyChatSummaryAndLastMessage(chatSummary, chatId) {
         usersRef.child(otherUserId).child("chatSummaries").child(chatId).update({lastMessage: lastMessageCopy});
       }
 
-      // also append copy of last message to the chat messages collection of other user
+      // append copy of last message to the chat messages collection of other user
       lastMessageCopy = _.omit(chatSummary.lastMessage, ['needsToBeCopied', 'messageId']);
       usersRef.child(otherUserId).child("chats").child(chatId).child("messages").child(chatSummary.lastMessage.messageId).set(lastMessageCopy);
+
+      // create notification for other user
+      var sender = chatSummary.users[chatSummary.lastMessage.senderUserId];
+      usersRef.child(otherUserId).child("notifications").push({
+        senderName: `${sender.firstName} ${sender.lastName}`,
+        profilePhotoUrl: sender.profilePhotoUrl ? sender.profilePhotoUrl : "",
+        text: chatSummary.lastMessage.text,
+        chatId: chatId
+      });
     }
   });
   if (chatSummary.needsToBeCopied) {
@@ -234,46 +242,6 @@ function sendMessage(phone, messageText, callback) {
     }
   });
 }
-
-function prelaunchReferralUrl() {
-  return "http://beta.ur.capital";
-}
-
-function sendInvitationMessage(user) {
-  var messageText = fullName(user.sponsor) + " invites you to be a beta tester of a new mobile app, UR Money! " + prelaunchReferralUrl();
-  sendMessage(user.phone, messageText, function(error) {
-    usersRef.child(user.userId).update(error ? {invitationSmsFailedAt: Firebase.ServerValue.TIMESTAMP} : {invitationSmsSentAt: Firebase.ServerValue.TIMESTAMP});
-  });
-};
-
-function sendSignUpMessages(user) {
-  var welcomeMessageText = "Congrats on being part of the UR Money beta program! Build status and increase your rewards by referring friends here: " + prelaunchReferralUrl();
-  sendMessage(user.phone, welcomeMessageText, function(error) {
-    updateInfo = error ? {signUpMessagesFailedAt: Firebase.ServerValue.TIMESTAMP} : {signUpMessagesSentAt: Firebase.ServerValue.TIMESTAMP};
-    usersRef.child(user.userId).update(updateInfo, function(error) {
-      if (user.sponsor) {
-        sendUplineSignUpMessages(user, null, user.sponsor.userId, 1);
-      }
-    });
-  });
-};
-
-function sendUplineSignUpMessages(newUser, newUserSponsor, uplineUserId, uplineLevel) {
-  usersRef.child(uplineUserId).once("value", function(snapshot) {
-    var uplineUser = snapshot.val();
-    var messageText = "Your status has been updated because ";
-    if (newUserSponsor) {
-      messageText = messageText + " " + fullName(newUserSponsor) + " referred " + fullName(newUser) + " to be a beta tester for UR.capital!"
-    } else {
-      newUserSponsor = uplineUser
-      messageText = messageText + fullName(newUser) + " has signed up as a beta tester with UR.capital!"
-    }
-    sendMessage(uplineUser.phone, messageText);
-    if (uplineLevel < 7 && uplineUser.sponsor) {
-      sendUplineSignUpMessages(newUser, newUserSponsor, uplineUser.sponsor.userId, uplineLevel + 1);
-    }
-  });
-};
 
 function generateVerificationCode() {
   var min = 100000;
