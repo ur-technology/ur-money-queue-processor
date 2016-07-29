@@ -65,17 +65,17 @@ function processPhoneVerifications() {
   firebase.database().ref("/phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
     var phoneVerificationRef = phoneVerificationSnapshot.ref;
     var phoneVerification = phoneVerificationSnapshot.val();
-
+    log.debug("processing phone verification for " + phoneVerification.phone);
     handlePhoneVerification(phoneVerification, phoneVerificationRef);
   });
 }
 
 function processChatEvents(user, userId, userRef) {
   _.each(user.chatSummaries || {}, function(chatSummary, chatId) {
-    if (chatSummary.pending) {
+    if (chatSummary.pending && !chatSummary.beingProcessed) {
       copyChatSummary(chatSummary, chatId);
     }
-    if (chatSummary.lastMessage && chatSummary.lastMessage.pending) {
+    if (chatSummary.lastMessage && chatSummary.lastMessage.pending && !chatSummary.lastMessage.beingProcessed) {
       copyLastMessage(chatSummary, chatId);
     }
   });
@@ -83,54 +83,74 @@ function processChatEvents(user, userId, userRef) {
 
 function processInvitations(user, userId, userRef) {
   _.each(user.downlineUsers || {}, function(downlineUser, downlineUserId) {
-    if (!downlineUser.pending) {
+    if (!downlineUser.pending || downlineUser.beingProcessed) {
       return;
     }
 
-    var newUser = {
-      createdAt: firebase.database.ServerValue.TIMESTAMP,
-      firstName: downlineUser.firstName,
-      middleName: downlineUser.middleName,
-      lastName: downlineUser.lastName,
-      profilePhotoUrl: generateProfilePhotoUrl(downlineUser),
-      phone: downlineUser.phone,
-      sponsor: _.extend({
-          userId: userId
-        },
-        _.pick(user, ['firstName', 'middleName', 'lastName', 'profilePhotoUrl'])
-      ),
-      downlineLevel: user.downlineLevel + 1
-    };
-    newUser = _.omitBy(newUser, _.isNil);
-    usersRef.child(downlineUserId).set(newUser);
-    userRef.child("downlineUsers").child("downlineUserId").child("pending").remove();
+    if (!downlineUser.phone) {
+      log.warn(`downline user ${downlineUserId} has no phone - skipping`);
+      return;
+    }
+
+    log.debug(`downline ${downlineUserId} for user ${userId} -- started`);
+    var sourceRef = usersRef.child(userId).child("downlineUsers").child(downlineUserId);
+    sourceRef.update({beingProcessed: true})
+
+    lookupUserByPhone(downlineUser.phone, function(matchingUser, matchingUserId) {
+      var error;
+      if (matchingUser && matchingUser.signedUpAt) {
+        error = `Sorry, ${fullName(matchingUser)} has already signed up with UR Money.`
+      } else {
+        var newUser = {
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          firstName: downlineUser.firstName,
+          middleName: downlineUser.middleName,
+          lastName: downlineUser.lastName,
+          profilePhotoUrl: generateProfilePhotoUrl(downlineUser),
+          phone: downlineUser.phone,
+          sponsor: _.extend({
+              userId: userId
+            },
+            _.pick(user, ['firstName', 'middleName', 'lastName', 'profilePhotoUrl'])
+          ),
+          downlineLevel: user.downlineLevel + 1
+        };
+        newUser = _.omitBy(newUser, _.isNil);
+        usersRef.child(downlineUserId).set(newUser);
+      }
+
+      sourceRef.update(_.omitBy({pending: false, beingProcessed: false, error: error}, _.isNil))
+      log.debug(`downline ${downlineUserId} for user ${userId} -- started`);
+    });
   });
 };
 
 function processContactLookups(user, userId, userRef) {
   _.each(user.contactLookups || {}, function(contactLookup, contactLookupId) {
-    if (!contactLookup.pending) {
+    if (!contactLookup.pending || contactLookup.beingProcessed) {
       return;
     }
+    var contactLookupRef = userRef.child("contactLookups").child(contactLookupId);
+    contactLookupRef.update({beingProcessed: true});
+
+    log.debug(`contactLookup ${contactLookupId} for user ${userId} -- started`);
     var contactsRemaining = contactLookup.contacts.length;
     var processedContacts = _.clone(contactLookup.contacts);
     _.each(processedContacts, (contact, contactIndex) => {
       _.each(contact.phones, (phone, phoneIndex) => {
-        usersRef.orderByChild("phone").equalTo(phone).limitToFirst(1).once("value", (matchingUsersSnapshot) => {
-          if (!contact.userId && matchingUsersSnapshot.exists()) {
-            var matchingUser = _.values(matchingUsersSnapshot.val())[0];
-            var matchingUserId = _.keys(matchingUsersSnapshot.val())[0];
-            if (matchingUser.signedUpAt) {
-              contact.userId = matchingUserId;
-              contact.registeredPhoneIndex = phoneIndex;
-            }
+        lookupUserByPhone(phone, function(matchingUser, matchingUserId) {
+          if (!contact.userId && matchingUser && matchingUser.signedUpAt) {
+            contact.userId = matchingUserId;
+            contact.registeredPhoneIndex = phoneIndex;
           }
           contactsRemaining--;
           if (contactsRemaining == 0) {
             userRef.child("contactLookups").child(contactLookupId).update({
               pending: false,
+              beingProcessed: false,
               processedContacts: processedContacts
             });
+            log.debug(`contactLookup ${contactLookupId} for user ${userId} -- finished`);
           }
         });
       });
@@ -140,18 +160,22 @@ function processContactLookups(user, userId, userRef) {
 
 function processSmsMessages(user, userId, userRef) {
   _.each(user.smsMessages || {}, function(smsMessage, smsMessageId) {
-    if (smsMessage.pending) {
+    if (smsMessage.pending && !smsMessage.beingProcessed) {
+      var sourceRef = userRef.child("smsMessages").child(smsMessageId);
+      sourceRef.update({beingProcessed: true});
+      log.debug(`smsMessage ${smsMessageId} for user ${userId} -- started`);
       sendMessage(smsMessage.phone, smsMessage.text, function(error) {
-        var smsMessageRef = userRef.child("smsMessages").child(smsMessageId);
         if (error) {
-          smsMessageRef.update({
+          sourceRef.update({
             pending: false,
+            beingProcessed: false,
             sendAttemptedAt: Firebase.ServerValue.TIMESTAMP,
             error: error
           });
         } else {
-          smsMessageRef.remove();
+          sourceRef.remove();
         }
+        log.debug(`smsMessage ${smsMessageId} for user ${userId} -- finished (success: ${!error})`);
       });
     }
   });
@@ -168,8 +192,7 @@ function handlePhoneVerification(phoneVerification, phoneVerificationRef) {
   }
 
   // find user with the same phone as this verification
-  log.debug("processing phone verification for " + phoneVerification.phone);
-  usersRef.orderByChild("phone").equalTo(phoneVerification.phone).limitToFirst(1).once("value", function(usersSnapshot) {
+  lookupUserByPhone(phoneVerification.phone, function(user, userId) {
 
     if (_.isDefined(phoneVerification.smsSuccess)) {
       // this record was already processed
@@ -177,7 +200,7 @@ function handlePhoneVerification(phoneVerification, phoneVerificationRef) {
       return;
     }
 
-    if (!usersSnapshot.exists()) {
+    if (!user) {
       // let user know no sms was sent because of an error
       log.info("no matching user found for " + phoneVerification.phone + " - skipping");
       phoneVerificationRef.update({
@@ -186,7 +209,6 @@ function handlePhoneVerification(phoneVerification, phoneVerificationRef) {
       });
       return;
     }
-    var userId = _.keys(usersSnapshot.val())[0]; // get userId of first user with matching phone
     log.debug("matching user with userId " + userId + " found for " + phoneVerification.phone);
 
     // send sms to user with verification code
@@ -206,44 +228,27 @@ function handlePhoneVerification(phoneVerification, phoneVerificationRef) {
         smsSuccess: true,
         verificationCode: verificationCode
       }).then(() => {
-
         // wait for attemptedVerificationCode to be set
+        // TODO: give up waiting after 24 hours
         phoneVerificationRef.on("value", function(updatedPhoneVerificationSnapshot) {
-          if (!updatedPhoneVerificationSnapshot.exists()) {
-            // record was deleted
-            log.warn("phoneVerification record unexpectedly deleted for  " + phoneVerification.phone + " - skipping");
-            return;
-          }
-
           var updatedPhoneVerification = updatedPhoneVerificationSnapshot.val();
-          if (_.isDefined(updatedPhoneVerification.verificationSuccess)) {
-            log.info("phoneVerification.verificationSuccess already set for " + phoneVerification.phone + " - skipping");
-            // this record was already processed
-            return;
-          }
+          if (!!updatedPhoneVerification &&
+            _.isUndefined(updatedPhoneVerification.verificationSuccess) &&
+            _.isDefined(updatedPhoneVerification.attemptedVerificationCode) ) {
+            var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
 
-          if (_.isUndefined(updatedPhoneVerification.attemptedVerificationCode)) {
-            // attemptedVerificationCode not yet set, need to keep waiting
-            log.debug("phoneVerification.attemptedVerificationCode not set for " + phoneVerification.phone + " - skipping");
-            return;
-          }
-
-          var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
-          if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
-            log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
-            var authToken = firebase.auth().createCustomToken(userId, {
-              some: "arbitrary",
-              data: "here"
-            });
-            updatedPhoneVerificationRef.update({
-              verificationSuccess: true,
-              authToken: authToken
-            });
-          } else {
-            log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
-            updatedPhoneVerificationRef.update({
-              verificationSuccess: false
-            });
+            if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
+              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
+              var authToken = firebase.auth().createCustomToken(userId, {
+                some: "arbitrary",
+                data: "here"
+              });
+              updatedPhoneVerificationRef.update({ verificationSuccess: true, authToken: authToken });
+            } else {
+              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
+              updatedPhoneVerificationRef.update({ verificationSuccess: false });
+            }
+            phoneVerificationRef.off("value");
           }
         });
       });
@@ -278,6 +283,8 @@ function generateProfilePhotoUrl(user) {
 
 function copyChatSummary(chatSummary, chatId) {
   var creatorUserId = chatSummary.creatorUserId;
+  var sourceRef = usersRef.child(creatorUserId).child("chatSummaries").child(chatId);
+  sourceRef.update({beingProcessed: true});
 
   // copy chat summary to all participants other than the creator
   var otherUserIds = _.without(_.keys(chatSummary.users), creatorUserId);
@@ -291,16 +298,17 @@ function copyChatSummary(chatSummary, chatId) {
     log.debug(`copied chatSummary to ${destinationRef.toString()}`);
   });
 
-  // mark chatSummary as no longer needing to be copied
-  var destinationRef = usersRef.child(creatorUserId).child("chatSummaries").child(chatId);
-  destinationRef.child("pending").remove();
-  log.debug(`marked chatSummary at ${destinationRef.toString()} as no longer needing to be copied`);
+  sourceRef.update({pending: false, beingProcessed: false});
+  log.debug(`marked chatSummary at ${sourceRef.toString()} as no longer needing to be copied`);
 }
 
 function copyLastMessage(chatSummary, chatId) {
   // create various copies of last message for all participants other than the sender
   var senderUserId = chatSummary.lastMessage.senderUserId;
   var otherUserIds = _.without(_.keys(chatSummary.users), senderUserId);
+  var sourceRef = usersRef.child(senderUserId).child("chatSummaries").child(chatId).child("lastMessage");
+  sourceRef.update({beingProcessed: true});
+
   _.each(otherUserIds, function(otherUserId, index) {
 
     if (!chatSummary.pending) {
@@ -330,10 +338,8 @@ function copyLastMessage(chatSummary, chatId) {
     log.debug(`pushed notification to ${destinationRef.toString()}`);
   });
 
-  // mark lastMessage as no longer needing to be copied
-  var destinationRef = usersRef.child(senderUserId).child("chatSummaries").child(chatId).child("lastMessage");
-  destinationRef.child("pending").remove();
-  log.debug(`marked lastMessage at ${destinationRef.toString()} as no longer needing to be copied`);
+  sourceRef.update({pending: false, beingProcessed: false});
+  log.debug(`marked lastMessage at ${sourceRef.toString()} as no longer needing to be copied`);
 }
 
 function fullName(user) {
@@ -391,5 +397,42 @@ function doBlast() {
       phone: user.phone,
       text: text
     });
+  });
+
+}
+
+function fixUserData() {
+  usersRef.orderByChild("createdAt").on("child_added", function(userSnapshot) {
+    var user = userSnapshot.val();
+    var userId = userSnapshot.key;
+    traverseObject(`/users/${userId}`, user, (valuePath, value, key) => {
+      if (_.isObject(value) && value.firstName && /dummyimage/.test(value.profilePhotoUrl)) {
+        var ref = firebase.database().ref(valuePath);
+        log.info(`about to update value at ${valuePath}, firstName=${value.firstName}`);
+        ref.update({profilePhotoUrl: generateProfilePhotoUrl(value)});
+      }
+    });
+  });
+};
+
+function traverseObject(parentPath, object, callback) {
+  _.forEach(object, function(value, key) {
+    var currentPath = `${parentPath}/${key}`;
+    callback(currentPath, value, key);
+    if (_.isObject(value) || _.isArray(value)) {
+      traverseObject(currentPath, value, callback);
+    }
+  });
+}
+
+function lookupUserByPhone(phone, callback) {
+  usersRef.orderByChild("phone").equalTo(phone).limitToFirst(1).once("value", (matchingUsersSnapshot) => {
+    var matchingUser;
+    var matchingUserId;
+    if (matchingUsersSnapshot.exists()) {
+      matchingUser = _.values(matchingUsersSnapshot.val())[0];
+      matchingUserId = _.keys(matchingUsersSnapshot.val())[0];
+    }
+    callback(matchingUser, matchingUserId);
   });
 }
