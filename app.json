@@ -1,0 +1,9 @@
+{
+  "name": "ur-money-notifier-john",
+  "description": "ur-money-notifier-john",
+  "formation": {
+    "worker": {
+      "quantity": 1
+    }
+  }
+}

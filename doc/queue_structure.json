@@ -1,0 +1,54 @@
+{
+  "phoneVerificationQueue": {
+    tasks: {
+
+    },
+    specs: {
+      "spec_1_send_sms_code": {
+        "in_progress_state": "spec_1_code_requested",
+        "finished_state": "spec_1_code_sent_via_sms",
+        "timeout": 5000
+      },
+      "spec_2": {
+        "start_state": "spec_2_code_returned_via_internet",
+        "in_progress_state": "spec_2_code_being_reviewed",
+        "finished_state": "spec_2_finished",
+        "timeout" : 5000
+      }
+    }
+  },
+  "chatCopyingQueue": {
+    tasks: {
+      "123": {
+        userId: "123"
+        chatId: "123",
+      }
+    },
+    specs: {
+    }
+  },
+  "messageCopyingQueue": {
+    tasks: {
+      "123": {
+        userId: "123"
+        chatId: "123",
+      }
+    },
+    specs: {
+    }
+  },
+  "smsQueue": {
+    tasks: {
+
+    },
+    specs: {
+    }
+  },
+  "contactLookupQueue": {
+
+  },
+  "invitationQueue": {
+
+  },
+
+}

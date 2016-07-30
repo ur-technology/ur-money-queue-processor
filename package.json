@@ -1,21 +1,35 @@
 {
-  "name": "notification_server",
-  "version": "1.0.0",
-  "description": "",
+  "name": "ur_money_notifier",
+  "version": "0.0.2",
+  "description": "background tasks for ur_money app",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/urcapital/ur_money.git"
+  },
   "main": "main.js",
+  "engines": {
+    "node": "4.4.7",
+    "npm": "3.9.5"
+  },
+  "private": true,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --debug main.js"
+    "start": "./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 main.ts && node build/main.js",
+    "start-node-debug": "./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 main.ts && node-debug build/main.js",
+    "postinstall": "./node_modules/.bin/typings install"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^2.0.0",
     "firebase": "^3.1.0",
+    "is-there": "^4.3.3",
     "lodash": "^4.14.0",
     "loglevel": "^1.4.1",
-    "moment": "^2.13.0",
-    "throng": "^2.0.1",
-    "twilio": "^2.9.1"
+    "moment": "^2.14.1",
+    "throng": "^4.0.0",
+    "twilio": "^2.9.1",
+    "typescript": "^1.8.10",
+    "typings": "^1.3.2"
   }
 }
