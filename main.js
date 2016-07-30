@@ -3,7 +3,7 @@ require('dotenv').load(); // load environment vars
 var log = require('loglevel');
 log.setDefaultLevel(process.env.LOG_LEVEL || "info")
 
-var throng = require('throng');
+var throng = require('throng'); // no typings file
 var _ = require('lodash');
 _.mixin({
   isDefined: function(reference) {
@@ -34,19 +34,7 @@ function start(id) {
   log.info('worker started ' + id);
 
   processPhoneVerifications();
-
-  _.each(["child_added", "child_changed"], function(childEvent) {
-    usersRef.orderByChild("createdAt").on(childEvent, function(userSnapshot) { // TODO: restrict to recently updated ones
-      var user = userSnapshot.val();
-      var userId = userSnapshot.key;
-      var userRef = userSnapshot.ref;
-
-      processChatEvents(user, userId, userRef);
-      processContactLookups(user, userId, userRef);
-      processInvitations(user, userId, userRef);
-      processSmsMessages(user, userId, userRef);
-    });
-  });
+  // processUserSpecificEvents();
 
   process.on('SIGTERM', function() {
     log.info(`Worker ${ id } exiting...`);
@@ -61,12 +49,38 @@ function start(id) {
 
 function processPhoneVerifications() {
 
+  var verificationsRef = firebase.database().ref("/phoneVerifications");
+
   // send out verification codes for all new phone verifications
-  firebase.database().ref("/phoneVerifications").on("child_added", function(phoneVerificationSnapshot) {
+  verificationsRef.on("child_added", function(phoneVerificationSnapshot) {
     var phoneVerificationRef = phoneVerificationSnapshot.ref;
     var phoneVerification = phoneVerificationSnapshot.val();
-    log.debug("processing phone verification for " + phoneVerification.phone);
-    handlePhoneVerification(phoneVerification, phoneVerificationRef);
+    sendVerificationCodeViaSms(phoneVerification, phoneVerificationRef);
+  });
+
+  // check all submitted verification codes
+  verificationsRef.on("child_changed", function(phoneVerificationSnapshot) {
+    var phoneVerificationRef = phoneVerificationSnapshot.ref;
+    var phoneVerification = phoneVerificationSnapshot.val();
+    if (phoneVerification.status == "verification-code-submitted-via-app") {
+      checkSubmittedVerificationCode(phoneVerification, phoneVerificationRef);
+    }
+  });
+}
+
+function processUserSpecificEvents() {
+
+  _.each(["child_added", "child_changed"], function(childEvent) {
+    usersRef.orderByChild("createdAt").on(childEvent, function(userSnapshot) { // TODO: restrict to recently updated ones
+      var user = userSnapshot.val();
+      var userId = userSnapshot.key;
+      var userRef = userSnapshot.ref;
+
+      processChatEvents(user, userId, userRef);
+      processContactLookups(user, userId, userRef);
+      processInvitations(user, userId, userRef);
+      processSmsMessages(user, userId, userRef);
+    });
   });
 }
 
@@ -185,76 +199,52 @@ function processSmsMessages(user, userId, userRef) {
 // private functions
 //////////////////////////////////////////////
 
-function handlePhoneVerification(phoneVerification, phoneVerificationRef) {
+function sendVerificationCodeViaSms(phoneVerification, phoneVerificationRef) {
   if (_.isUndefined(phoneVerification.phone)) {
-    log.warn("no phone in phoneVerification record " + phoneVerificationSnapshot.key + " - skipping");
+    var error = `no phone submitted in phoneVerification record ${phoneVerificationRef.key}`;
+    log.warn(error);
+    phoneVerificationRef.update({ status: "verification-code-not-sent-via-sms", error: error});
     return;
   }
 
   // find user with the same phone as this verification
   lookupUserByPhone(phoneVerification.phone, function(user, userId) {
 
-    if (_.isDefined(phoneVerification.smsSuccess)) {
-      // this record was already processed
-      log.debug("phone verification for " + phoneVerification.phone + " was already processed - skipping");
-      return;
-    }
-
     if (!user) {
-      // let user know no sms was sent because of an error
       log.info("no matching user found for " + phoneVerification.phone + " - skipping");
       phoneVerificationRef.update({
-        smsSuccess: false,
-        smsError: "Use of UR Money is currently available by invitation only, and you phone number was not on the invitee list."
+        status: "verification-code-not-sent-via-sms",
+        error: "Use of UR Money is currently available by invitation only, and you phone number was not on the invitee list."
       });
       return;
     }
-    log.debug("matching user with userId " + userId + " found for " + phoneVerification.phone);
 
-    // send sms to user with verification code
+    log.debug(`matching user with userId ${userId}  found for phone ${phoneVerification.phone}`);
     var verificationCode = generateVerificationCode();
-    sendMessage(phoneVerification.phone, "Your UR Money verification code is " + verificationCode, function(error) {
+    sendMessage(phoneVerification.phone, `Your UR Money verification code is ${verificationCode}`, function(error) {
       if (error) {
-        log.warn("error sending message to user with userId " + userId + " and phone " + phoneVerification.phone, error);
-        phoneVerificationRef.update({
-          smsSuccess: false,
-          smsError: error
-        });
-        return;
+        error = `error sending message to user with userId ${userId} and phone ${phoneVerification.phone}: ${error}`
+        phoneVerificationRef.update({ status: "verification-code-not-sent-via-sms", error: error});
+      } else {
+        // save verification code to db and notifiy client that it was sent via sms
+        // NOTE: client is prevent via security rules from reading the verification code from the db
+        phoneVerificationRef.update({ status: "verification-code-sent-via-sms", verificationCode: verificationCode, userId: userId });
       }
-
-      // save verificationCode and let user know sms was sent
-      phoneVerificationRef.update({
-        smsSuccess: true,
-        verificationCode: verificationCode
-      }).then(() => {
-        // wait for attemptedVerificationCode to be set
-        // TODO: give up waiting after 24 hours
-        phoneVerificationRef.on("value", function(updatedPhoneVerificationSnapshot) {
-          var updatedPhoneVerification = updatedPhoneVerificationSnapshot.val();
-          if (!!updatedPhoneVerification &&
-            _.isUndefined(updatedPhoneVerification.verificationSuccess) &&
-            _.isDefined(updatedPhoneVerification.attemptedVerificationCode) ) {
-            var updatedPhoneVerificationRef = updatedPhoneVerificationSnapshot.ref;
-
-            if (updatedPhoneVerification.attemptedVerificationCode == updatedPhoneVerification.verificationCode) {
-              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " matches actual verificationCode; sending authToken to user");
-              var authToken = firebase.auth().createCustomToken(userId, {
-                some: "arbitrary",
-                data: "here"
-              });
-              updatedPhoneVerificationRef.update({ verificationSuccess: true, authToken: authToken });
-            } else {
-              log.debug("attemptedVerificationCode " + updatedPhoneVerification.attemptedVerificationCode + " does not match actual verificationCode " + updatedPhoneVerification.verificationCode);
-              updatedPhoneVerificationRef.update({ verificationSuccess: false });
-            }
-            phoneVerificationRef.off("value");
-          }
-        });
-      });
     });
   });
-};
+}
+
+function checkSubmittedVerificationCode(phoneVerification, phoneVerificationRef) {
+  if (phoneVerification.submittedVerificationCode == phoneVerification.verificationCode) {
+    log.debug(`submittedVerificationCode ${phoneVerification.submittedVerificationCode} matches actual verificationCode; sending authToken to user`);
+    var authToken = firebase.auth().createCustomToken(phoneVerification.userId, { some: "arbitrary", data: "here" });
+    phoneVerificationRef.update({ status: "verification-succeeded", authToken: authToken });
+  } else {
+    error = `submittedVerificationCode ${phoneVerification.submittedVerificationCode} does not match actual verificationCode ${phoneVerification.verificationCode}`;
+    log.debug(error);
+    phoneVerificationRef.update({ status: "verification-failed", error: error });
+  }
+}
 
 function generateProfilePhotoUrl(user) {
   var colorScheme = _.sample([{
@@ -343,7 +333,7 @@ function copyLastMessage(chatSummary, chatId) {
 }
 
 function fullName(user) {
-  return user.firstName + " " + user.lastName;
+  return `${user.firstName || ""} ${user.middleName || ""} ${user.lastName || ""}`.trim().replace(/  /," ");
 }
 
 function sendMessage(phone, messageText, callback) {
@@ -402,7 +392,7 @@ function doBlast() {
 }
 
 function fixUserData() {
-  usersRef.orderByChild("createdAt").on("child_added", function(userSnapshot) {
+  usersRef.on("child_added", function(userSnapshot) {
     var user = userSnapshot.val();
     var userId = userSnapshot.key;
     traverseObject(`/users/${userId}`, user, (valuePath, value, key) => {
