@@ -34,7 +34,7 @@ function start(id) {
   log.info('worker started ' + id);
 
   processPhoneVerifications();
-  // processUserSpecificEvents();
+  processUserSpecificEvents();
 
   process.on('SIGTERM', function() {
     log.info(`Worker ${ id } exiting...`);
