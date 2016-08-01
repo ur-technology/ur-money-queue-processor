@@ -1,54 +1,70 @@
 {
-  "phoneVerificationQueue": {
-    tasks: {
-
+    "phoneAuthenticationQueue": {
+        "specs": {
+            "code_generation": {
+                "start_state": null,
+                "in_progress_state": "code_generation_in_progress",
+                "finished_state": "code_generation_completed_and_sms_sent",
+                "error_state": "code_generation_error",
+                "timeout": 15000
+            },
+            "code_matching": {
+                "start_state": "code_matching_requested",
+                "in_progress_state": "code_matching_in_progress",
+                "finished_state": "code_matching_completed",
+                "error_state": "code_matching_error",
+                "timeout": 15000
+            }
+        },
+        "tasks": {}
     },
-    specs: {
-      "spec_1_send_sms_code": {
-        "in_progress_state": "spec_1_code_requested",
-        "finished_state": "spec_1_code_sent_via_sms",
-        "timeout": 5000
-      },
-      "spec_2": {
-        "start_state": "spec_2_code_returned_via_internet",
-        "in_progress_state": "spec_2_code_being_reviewed",
-        "finished_state": "spec_2_finished",
-        "timeout" : 5000
-      }
-    }
-  },
-  "chatCopyingQueue": {
-    tasks: {
-      "123": {
-        userId: "123"
-        chatId: "123",
-      }
-    },
-    specs: {
-    }
-  },
-  "messageCopyingQueue": {
-    tasks: {
-      "123": {
-        userId: "123"
-        chatId: "123",
-      }
-    },
-    specs: {
-    }
-  },
-  "smsQueue": {
-    tasks: {
 
+    "chatSummaryCopyingQueue": {
+        "specs": {},
+        "tasks": {
+            "123": {
+                userId: "123",
+                chatId: "123"
+            }
+        }
     },
-    specs: {
-    }
-  },
-  "contactLookupQueue": {
 
-  },
-  "invitationQueue": {
+    "chatMessageCopyingQueue": {
+        "specs": {},
+        "tasks": {
+            "123": {
+                userId: "123",
+                chatId: "123"
+            }
+        }
+    },
 
-  },
+    "contactLookupQueue": {
+        "specs": {
+            "contact_lookup": {
+                "start_state": null,
+                "in_progress_state": "in_progress",
+                "finished_state": "finished",
+                "error_state": "error",
+                "timeout": 30000
+            }
+        },
+        "tasks": {
+            "123": {
+                userId: "123"
+                deviceId: "123",
+            }
+        }
+    },
+
+    "invitationQueue": {
+        "specs": {},
+        "tasks": {
+            "123": {
+                xxx: "123"
+                xxx: "123",
+            }
+        }
+    },
 
 }

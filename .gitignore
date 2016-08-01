@@ -3,4 +3,4 @@ build/
 /typings
 npm-debug.log
 .DS_Store
-/*.env
+.env
