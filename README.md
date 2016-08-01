@@ -10,10 +10,7 @@ cd ur_money_notifer
 npm install
 typings install
 ```
-## To run in heroku
-* xxx
-
-## To run locally
+## To run locally:
 * 1: create local copy of environment files: `heroku config --app ur-money-notifier-staging -s > .env`
 * 2: edit file and change value of NODE_ENV to dev and FIREBASE_PROJECT_ID to your desired Firebase project
 * 3: Run this: `heroku local`
