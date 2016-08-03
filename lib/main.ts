@@ -6,9 +6,10 @@ import * as _ from 'lodash';
 import * as firebase from 'firebase';
 import {Notifier} from './notifier';
 
-if (!process.env || _.includes(["john","xavier"], process.env.NODE_ENV)) {
+if (!process.env.NODE_ENV) {
   dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
 }
+
 log.setDefaultLevel(process.env.LOG_LEVEL || "info")
 
 log.info(`starting with NODE_ENV ${process.env.NODE_ENV} and FIREBASE_PROJECT_ID ${process.env.FIREBASE_PROJECT_ID}`);

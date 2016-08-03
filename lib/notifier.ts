@@ -128,9 +128,8 @@ export class Notifier {
 
             // create notification for other user
             let sender = chatSummary.users[message.senderUserId];
-            let notificationRef = self.db.ref(`/users/${otherUserId}/notifications`).push({
+            let notificationRef = self.db.ref(`/users/${otherUserId}/notificationQueue/tasks`).push({
               senderName: `${sender.firstName} ${sender.lastName}`,
-              profilePhotoUrl: sender.profilePhotoUrl ? sender.profilePhotoUrl : "",
               text: message.text,
               chatId: data.chatId,
               messageId: data.messageId
