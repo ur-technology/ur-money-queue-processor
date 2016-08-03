@@ -135,7 +135,6 @@ export class Notifier {
               messageId: data.messageId
             });
             log.trace(`created notification for message at ${notificationRef.toString()}`);
-
           });
           resolve(data)
         }, (error) => {
@@ -153,6 +152,7 @@ export class Notifier {
     let options = { 'specId': 'contact_lookup', 'numWorkers': 1 };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
       let contactsRemaining = data.contacts.length;
+      log.debug(`contactLookup ${data.$key} - started`);
       data.processedContacts = _.clone(data.contacts);
       _.each(data.processedContacts, (contact, contactIndex) => {
         _.each(contact.phones, (phone, phoneIndex) => {
@@ -163,9 +163,11 @@ export class Notifier {
             }
             contactsRemaining--;
             if (contactsRemaining == 0) {
+              log.debug(`contactLookup ${data.$key} - finished - ${contactsRemaining.length} contacts`);
               resolve(data);
             }
           }, (error) => {
+            log.debug(`contactLookup ${data.$key} - canceled`);
             reject(error);
           });
         });
