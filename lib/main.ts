@@ -19,8 +19,7 @@ firebase.initializeApp({
   databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
 });
 
-let twilioOptions = _.pick(process.env, ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER']);
-let notifier = new Notifier(twilioOptions);
+let notifier = new Notifier(process.env);
 notifier.start();
 
 process.on('SIGTERM', () => {

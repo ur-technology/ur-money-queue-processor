@@ -10,10 +10,16 @@ cd ur_money_notifer
 npm install
 typings install
 ```
-## To run locally:
-* 1: create local copy of environment files: `heroku config --app ur-money-notifier-staging -s > .env`
-* 2: edit file and change value of NODE_ENV to dev and FIREBASE_PROJECT_ID to your desired Firebase project
-* 3: Run this: `heroku local`
+## Initial configuration
+* Create ssh tunnel to rpcnode: `ssh -f  -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@45.33.72.14`
+* Create local copy of environment files: `heroku config --app ur-money-notifier-staging -s > .env`
+* Edit .env and change value of NODE_ENV to dev and FIREBASE_PROJECT_ID to your desired Firebase project
+
+## Run Locally
+* Run this: `heroku local`
+
+## Debug Locally
+* Run this: `npm run-script start-node-debug`
 
 ## deploy to staging or production
 * Just merge your branch to dev or master, respectively
