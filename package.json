@@ -1,10 +1,10 @@
 {
   "name": "ur_money_notifier",
   "version": "0.0.2",
-  "description": "background tasks for ur_money app",
+  "description": "background tasks associated with git://github.com/urcapital/ur_money.git",
   "repository": {
     "type": "git",
-    "url": "git://github.com/urcapital/ur_money.git"
+    "url": "git://github.com/urcapital/ur_money_notifier.git"
   },
   "main": "build/main.js",
   "engines": {

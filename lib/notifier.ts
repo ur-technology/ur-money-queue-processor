@@ -30,7 +30,7 @@ export class Notifier {
       this.processPhoneAuthenticationQueueForCodeMatching();
       this.processChatSummaryCopyingQueue();
       this.processChatMessageCopyingQueue();
-      this.processContactLookupQueue();
+      this.processPhoneLookupQueue();
       this.processInvitationQueue();
       if (this.processingUrBlocks) {
         this.populateUrBlockQueue();
@@ -75,7 +75,7 @@ export class Notifier {
         "timeout": 15000
       });
     }).then(() => {
-      return self.ensureSpecLoaded("/contactLookupQueue/specs/contact_lookup", {
+      return self.ensureSpecLoaded("/phoneLookupQueue/specs/phone_lookup", {
         "in_progress_state": "in_progress",
         "finished_state": "finished",
         "error_state": "error",
@@ -251,20 +251,23 @@ export class Notifier {
   private processPhoneAuthenticationQueueForCodeGeneration() {
     let self = this;
     let queueRef = firebase.database().ref("/phoneAuthenticationQueue");
-    let options = { 'specId': 'code_generation', 'numWorkers': 1 };
+    let options = { 'specId': 'code_generation', 'numWorkers': 1, sanitize: false };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
-      // TODO: skip this request if there is another more recent request for this phone number
-      self.lookupUserByPhone(data.phone).then((result) => {
-        if (result.matchingUserId) {
-          log.debug(`matching user with userId ${result.matchingUserId} found for phone ${data.phone}`);
+      self.lookupUsersByPhone(data.phone).then((result) => {
+        // TODO: handle case where there are multiple invitations
+        let matchingUser = _.first(result.matchingUsers);
+        let matchingUserId = _.first(result.matchingUserIds);
+        if (matchingUser) {
+          log.debug(`matching user with userId ${matchingUserId} found for phone ${data.phone}`);
           let verificationCode = self.generateVerificationCode();
           self.sendMessage(data.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
             if (error) {
-              log.info(`error sending message to user with userId ${result.matchingUserId} and phone ${data.phone}: ${error}`);
+              log.info(`error sending message to user with userId ${matchingUserId} and phone ${data.phone}: ${error}`);
               reject(error);
             } else {
-              data.userId = result.matchingUserId;
+              data.userId = matchingUserId;
               data.verificationCode = verificationCode;
+              data._state = "code_generation_completed_and_sms_sent";
               resolve(data);
             }
           });
@@ -361,30 +364,38 @@ export class Notifier {
     });
   }
 
-  private processContactLookupQueue() {
+  private processPhoneLookupQueue() {
     let self = this;
-    let queueRef = self.db.ref("/contactLookupQueue");
-    let options = { 'specId': 'contact_lookup', 'numWorkers': 1 };
+    let queueRef = self.db.ref("/phoneLookupQueue");
+    let options = { 'specId': 'phone_lookup', 'numWorkers': 1, 'sanitize': false };
+    let rejected: boolean = false;
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
-      let contactsRemaining = data.contacts.length;
-      log.debug(`contactLookup ${data.$key} - started`);
-      data.processedContacts = _.clone(data.contacts);
-      _.each(data.processedContacts, (contact, contactIndex) => {
-        _.each(contact.phones, (phone, phoneIndex) => {
-          self.lookupUserByPhone(phone).then((result) => {
-            if (!contact.userId && result.matchingUser && result.matchingUserId && result.matchingUser.signedUpAt) {
-              contact.userId = result.matchingUserId;
-              contact.registeredPhoneIndex = phoneIndex;
+      data.phones = data.phones || [];
+      let phonesRemaining = data.phones.length;
+      log.debug(`phoneLookup ${data._id} - started`);
+      let phoneToUserMapping: any = {};
+      _.each(data.phones, (phone) => {
+        self.lookupSignedUpUserByPhone(phone).then((result) => {
+          if (result.signedUpUser) {
+            phoneToUserMapping[phone] = {
+              userId: result.signedUpUserId,
+              name: result.signedUpUser.name,
+              profilePhotoUrl: result.signedUpUser.profilePhotoUrl,
+              wallet: result.signedUpUser.wallet
+            };
+          }
+          phonesRemaining--;
+          if (phonesRemaining == 0 && !rejected) {
+            log.debug(`phoneLookup ${data._id} - finished - ${data.phones.length} contacts`);
+            data.result = { numMatches: _.size(phoneToUserMapping) };
+            if (data.result.numMatches > 0) {
+              data.result.phoneToUserMapping = phoneToUserMapping;
             }
-            contactsRemaining--;
-            if (contactsRemaining == 0) {
-              log.debug(`contactLookup ${data.$key} - finished - ${contactsRemaining.length} contacts`);
-              resolve(data);
-            }
-          }, (error) => {
-            log.debug(`contactLookup ${data.$key} - canceled`);
-            reject(error);
-          });
+            resolve(data);
+          }
+        }, (error) => {
+          rejected = true;
+          reject(error);
         });
       });
     });
@@ -395,41 +406,48 @@ export class Notifier {
     let queueRef = self.db.ref("/invitationQueue");
     let options = { 'numWorkers': 1 };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
+      try {
+        self.lookupUsersByPhone(data.invitee.phone).then((result) => {
+          let matchingUser: any = _.first(result.matchingUsers);
+          if (matchingUser && matchingUser.signedUpAt) {
+            reject(`Sorry, ${matchingUser.name} has already signed up with UR Money.`);
+            return;
+          }
 
-      self.lookupUserByPhone(data.downlineUser.phone).then((result) => {
-        let error: string;
-        if (result.matchingUser && result.matchingUser.signedUpAt) {
-          reject(`Sorry, ${self.fullName(result.matchingUser)} has already signed up with UR Money.`);
+          self.lookupUser(data.sponsorUserId).then((sponsor: any) => {
+            // add new user to users list
+            let newUser: any = {
+              createdAt: firebase.database.ServerValue.TIMESTAMP,
+              firstName: data.invitee.firstName,
+              middleName: data.invitee.middleName,
+              lastName: data.invitee.lastName,
+              phone: data.invitee.phone,
+              sponsor: {
+                userId: data.sponsorUserId,
+                name: sponsor.name,
+                profilePhotoUrl: sponsor.profilePhotoUrl
+              },
+              downlineLevel: sponsor.downlineLevel + 1
+            };
+            newUser.name = self.fullName(newUser);
+            newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser.name);
+            let newUserRef = self.db.ref('/users').push(newUser);
+
+            // add new user to sponsor's downline users
+            let newUserId = newUserRef.key;
+            let sponsorRef = self.db.ref(`/users/${data.sponsorUserId}`);
+            sponsorRef.child(`downlineUsers/${newUserId}`).set({name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl});
+            log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${data.sponsorUserId}`);
+            resolve(data);
+          });
+        }, (error) => {
+          reject(error);
           return;
-        }
-
-        self.lookupUser(data.sponsorUserId).then((sponsor: any) => {
-          // add new user to users list
-          let summaryFields = ['firstName', 'middleName', 'lastName', 'profilePhotoUrl'];
-          let sponsorSummary = _.extend({ userId: data.sponsorUserId },_.pick(sponsor, summaryFields));
-          let newUser: any = {
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-            firstName: data.downlineUser.firstName,
-            middleName: data.downlineUser.middleName,
-            lastName: data.downlineUser.lastName,
-            profilePhotoUrl: self.generateProfilePhotoUrl(data.downlineUser),
-            phone: data.downlineUser.phone,
-            sponsor: sponsorSummary,
-            downlineLevel: sponsor.downlineLevel + 1
-          };
-          newUser = _.omitBy(newUser, _.isNil);
-          let newUserRef = self.db.ref('/users').push(newUser);
-
-          // add new user to sponsor's downline users
-          let newUserId = newUserRef.key;
-          let newUserSummary = _.pick(newUser, summaryFields);
-          self.db.ref(`/users/${data.sponsorUserId}/downlineUsers/${newUserId}`).set(newUserSummary);
         });
-        log.debug(`processed invitation of ${data.downlineUserId} (${self.fullName(data.downlineUser)}) by ${data.userId}`);
-      }, (error) => {
-        reject(error);
+      } catch(e) {
+        reject(e.message);
         return;
-      });
+      }
     });
   }
 
@@ -580,18 +598,32 @@ export class Notifier {
     });
   }
 
-  private lookupUserByPhone(phone: string): Promise<any> {
+  private lookupSignedUpUserByPhone(phone: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.db.ref("/users").orderByChild("phone").equalTo(phone).limitToFirst(1).once("value", (snapshot: firebase.database.DataSnapshot) => {
-        let matchingUser: any;
-        let matchingUserId: string;
-        if (snapshot.exists()) {
-          let matchingUsers = snapshot.val();
-          matchingUser = _.first(_.values(matchingUsers));
-          matchingUserId = _.first(_.keys(matchingUsers));
-        }
-        resolve({matchingUser: matchingUser, matchingUserId: matchingUserId});
+      self.lookupUsersByPhone(phone).then((result) => {
+        let index = _.findIndex(result.matchingUsers, (user) => {
+          return self.isCompletelySignedUp(user);
+        });
+        resolve({signedUpUser: result.matchingUsers[index], signedUpUserId: result.matchingUserIds[index]});
+      });
+    });
+  }
+
+  private lookupUsersByPhone(phone: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.db.ref("/users").orderByChild("phone").equalTo(phone).once("value", (snapshot: firebase.database.DataSnapshot) => {
+
+        // sort matching users with most completely signed up users first
+        let userMapping = snapshot.val() || {};
+        let users = _.values(userMapping);
+        let userIds = _.keys(userMapping);
+        _.each(users, (user: any, index: number) => { user.userId = userIds[index]; });
+        let sortedUsers = _.reverse(_.sortBy(users, (user) => { return self.completenessRank(user); }));
+        let sortedUserIds = _.map(sortedUsers, (user) => { return user.userId });
+
+        resolve({matchingUsers: sortedUsers, matchingUserIds: sortedUserIds});
       }, (error: string) => {
         reject(error);
       });
@@ -692,4 +724,13 @@ export class Notifier {
       });
     });
   }
+
+  private completenessRank(user: any) {
+    return (user.signedUpAt ? 1000 : 0) + (user.wallet && !!user.wallet.address ? 100 : 0) + (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
+  }
+
+  private isCompletelySignedUp(user: any) {
+    return !!user.signedUpAt && !!user.name && !!user.profilePhotoUrl && !!user.wallet && !!user.wallet.address;
+  }
+
 }
