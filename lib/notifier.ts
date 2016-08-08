@@ -347,6 +347,15 @@ export class Notifier {
             // create notification for other user
             let sender = chatSummary.users[message.senderUserId];
             let notificationRef = self.db.ref(`/users/${otherUserId}/notificationQueue/tasks`).push({
+              // "createdAt" : the date that the message was sent
+              // "messageText" :: The text of the message
+              // "notificationProcessed" : "false"
+              // "profilePhotoUrl" : The photo of the other user involved in the chat
+              // "sourceId" : the chat id
+              // "sourceType" : "message"
+              // "title" : The title to be presented in the notification and in the event list. Example: Alpha Andrews has sent you a message
+              // "updatedAt" : The date that message was sent
+              // "userdId" : the id of the other user user involved in the chat
               senderName: `${sender.firstName} ${sender.lastName}`,
               text: message.text,
               chatId: data.chatId,
