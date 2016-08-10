@@ -2,6 +2,7 @@
 
 ## Install global dependencies (skip if already installed)
 `npm install -g typings`
+`npm install -g node-inspector`
 
 ## Install local dependencies
 ```script
