@@ -354,7 +354,7 @@ export class Notifier {
               profilePhotoUrl : sender.profilePhotoUrl,
               sourceId : data.chatId,
               sourceType : 'message',
-              title : `${sender.name} has sent you a message`,
+              title : sender.name,
               updatedAt : message.sentAt,
               userdId : message.senderUserId
             });
