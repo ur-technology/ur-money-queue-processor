@@ -198,7 +198,7 @@ export class Notifier {
         _.each(transactions, (transactionHash) => {
           urTransactionsRef.child(transactionHash).set(true);
         });
-        resolve(data);
+        self.resolveIfPossible(resolve,reject,data);
       });
 
       // // a second way to call getBlock
@@ -268,13 +268,13 @@ export class Notifier {
               data.userId = matchingUserId;
               data.verificationCode = verificationCode;
               data._state = "code_generation_completed_and_sms_sent";
-              resolve(data);
+              self.resolveIfPossible(resolve,reject,data);
             }
           });
         } else {
           log.info(`no matching user found for ${data.phone}`);
           data._new_state = "code_generation_canceled_because_user_not_invited";
-          resolve(data);
+          self.resolveIfPossible(resolve,reject,data);
         }
       }, (error) => {
         reject(error);
@@ -295,7 +295,7 @@ export class Notifier {
         log.debug(`submittedVerificationCode ${data.submittedVerificationCode} does not match actual verificationCode ${data.verificationCode}`);
         data.verificationResult = { codeMatch: false };
       }
-      resolve(data);
+      self.resolveIfPossible(resolve,reject,data);
     });
     self.queues.push(queue);
   }
@@ -313,7 +313,7 @@ export class Notifier {
           destinationRef.set(chatSummaryCopy);
           log.trace(`copied chatSummary to ${destinationRef.toString()}`);
         });
-        resolve(data)
+        self.resolveIfPossible(resolve,reject,data);
       }, (error) => {
         reject(error);
       });
@@ -359,7 +359,7 @@ export class Notifier {
               userdId : message.senderUserId
             });
           });
-          resolve(data)
+          self.resolveIfPossible(resolve,reject,data);
         }, (error) => {
           reject(error);
         });
@@ -396,7 +396,7 @@ export class Notifier {
             if (data.result.numMatches > 0) {
               data.result.phoneToUserMapping = phoneToUserMapping;
             }
-            resolve(data);
+            self.resolveIfPossible(resolve,reject,data);
           }
         }, (error) => {
           rejected = true;
@@ -443,7 +443,7 @@ export class Notifier {
             let sponsorRef = self.db.ref(`/users/${data.sponsorUserId}`);
             sponsorRef.child(`downlineUsers/${newUserId}`).set({name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl});
             log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${data.sponsorUserId}`);
-            resolve(data);
+            self.resolveIfPossible(resolve,reject,data);
           });
         }, (error) => {
           reject(error);
@@ -736,6 +736,27 @@ export class Notifier {
 
   private isCompletelySignedUp(user: any) {
     return !!user.signedUpAt && !!user.name && !!user.profilePhotoUrl && !!user.wallet && !!user.wallet.address;
+  }
+
+  private containsUndefinedValue(objectOrArray: any): boolean {
+    return _.some(objectOrArray, (value,key) => {
+      let type = typeof(value);
+      if (type == 'undefined') {
+        return true;
+      } else if (type == 'object') {
+        return this.containsUndefinedValue(value);
+      } else {
+        return false;
+      }
+    });
+  }
+
+  private resolveIfPossible(resolve: any, reject: any, data: any) {
+    if (this.containsUndefinedValue(data)) {
+      reject(`undefined value in object ${JSON.stringify(data)}`);
+    } else {
+      resolve(data);
+    }
   }
 
 }
