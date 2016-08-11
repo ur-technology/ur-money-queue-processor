@@ -12,7 +12,7 @@ npm install
 typings install
 ```
 ## Initial configuration
-* Create ssh tunnel to rpcnode: `ssh -f  -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@45.33.72.14`
+* Create ssh tunnel to rpcnode: `ssh -f  -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@45.55.7.79`
 * Create local copy of environment files: `heroku config --app ur-money-notifier-staging -s > .env`
 * Edit .env and change value of NODE_ENV to dev and FIREBASE_PROJECT_ID to your desired Firebase project
 

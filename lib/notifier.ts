@@ -4,23 +4,22 @@ import * as log from 'loglevel';
 import * as _ from 'lodash';
 import * as moment from 'moment';
 import * as firebase from 'firebase';
+import {BigNumber} from 'bignumber.js';
+import {sprintf} from 'sprintf-js';
 let twilio = require('twilio');
 let Queue = require('firebase-queue');
 
 export class Notifier {
+  private env: any;
   public queues: any[];
   private db: any;
-  private twilioClient: any;
-  private twilioFromNumber: string;
-  private web3: any;
-  private previousBlockCount: number;
-  private processingUrBlocks: boolean;
+
+  private twilioClient: any; // used to send messages via twilio
+  private web3: any; // used to populate and process ur blocks
 
   constructor(env: any) {
+    this.env = env;
     this.db = firebase.database();
-    this.twilioClient = new twilio.RestClient(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
-    this.twilioFromNumber = env.TWILIO_FROM_NUMBER
-    this.processingUrBlocks = env.PROCESSING_UR_BLOCKS == "true";
     this.queues = [];
   }
 
@@ -32,8 +31,8 @@ export class Notifier {
       this.processChatMessageCopyingQueue();
       this.processPhoneLookupQueue();
       this.processInvitationQueue();
-      if (this.processingUrBlocks) {
-        this.populateUrBlockQueue();
+      if (this.env.PROCESSING_UR_BLOCKS == "true") {
+        this.addRecentlyMinedBlocksToUrBlockQueue();
         this.processUrBlockQueue()
       }
     });
@@ -44,7 +43,7 @@ export class Notifier {
   //////////////////////////////////////////////
 
 
-  private ensureSpecLoaded(specPath: string, specValue: any): Promise<any> {
+  private ensureQueueSpecLoaded(specPath: string, specValue: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       let specRef = self.db.ref(specPath);
@@ -61,13 +60,13 @@ export class Notifier {
 
   private setUpQueueSpecs(): Promise<any> {
     let self = this;
-    return self.ensureSpecLoaded("/phoneAuthenticationQueue/specs/code_generation", {
+    return self.ensureQueueSpecLoaded("/phoneAuthenticationQueue/specs/code_generation", {
       "in_progress_state": "code_generation_in_progress",
       "finished_state": "code_generation_completed_and_sms_sent",
       "error_state": "code_generation_error",
       "timeout": 15000
     }).then(() => {
-      return self.ensureSpecLoaded("/phoneAuthenticationQueue/specs/code_matching", {
+      return self.ensureQueueSpecLoaded("/phoneAuthenticationQueue/specs/code_matching", {
         "start_state": "code_matching_requested",
         "in_progress_state": "code_matching_in_progress",
         "finished_state": "code_matching_completed",
@@ -75,7 +74,7 @@ export class Notifier {
         "timeout": 15000
       });
     }).then(() => {
-      return self.ensureSpecLoaded("/phoneLookupQueue/specs/phone_lookup", {
+      return self.ensureQueueSpecLoaded("/phoneLookupQueue/specs/phone_lookup", {
         "in_progress_state": "in_progress",
         "finished_state": "finished",
         "error_state": "error",
@@ -84,167 +83,202 @@ export class Notifier {
     });
   };
 
-  private populateUrBlockQueueLater(previousBlockCount: number) {
-    let self = this;
-    self.previousBlockCount = previousBlockCount;
-    setTimeout((function() {
-      log.trace("Sleeping for 10 seconds!");
-      self.populateUrBlockQueue();
-    }), 15000); // calling self in 15 seconds
-  }
-
-  private populateUrBlockQueue() {
+  private addRecentlyMinedBlocksToUrBlockQueue() {
     let self = this;
 
     if (!self.web3) {
-      // NOTE: Need to make sure tunnel to rpc node is open.
+      // NOTE: This code assumes a tunnel to the rpc node is open.
       //       Run this to check for tunnel: nc -z localhost 9595 || echo 'no tunnel open'
-      //       Run this to set up tunnel: RPCNODE1=45.33.72.14 ssh -f -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@${RPCNODE1}
+      //       Run this to set up tunnel: RPCNODE1=45.55.7.79 ssh -f -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@${RPCNODE1}
 
       let Web3 = require('web3');
       self.web3 = new Web3();
       self.web3.setProvider(new this.web3.providers.HttpProvider('http://localhost:9595'));
     }
 
-
-
     self.getLastQueuedBlockNumber().then((lastQueuedBlockNumber: number) => {
       self.getLastMinedBlockNumber().then((lastMinedBlockNumber: number) => {
-        if (!lastMinedBlockNumber) {
-          lastMinedBlockNumber = 0;
-        }
-        if (!lastQueuedBlockNumber) {
-          lastQueuedBlockNumber = 0;
+
+        lastQueuedBlockNumber = lastQueuedBlockNumber || 0;
+        lastMinedBlockNumber = lastMinedBlockNumber || 0;
+        let totalBlockCount = lastMinedBlockNumber - lastQueuedBlockNumber;
+
+        function repeatLater() {
+          log.trace("sleeping for 15 seconds");
+          setTimeout(function() { self.addRecentlyMinedBlocksToUrBlockQueue(); }, 15000); // calling self in 15 seconds
         }
 
-        let totalBlockCount: number = lastMinedBlockNumber - lastQueuedBlockNumber;
-        if (totalBlockCount > 0 || self.previousBlockCount !== 0) {
-          log.info(`Last mined blockNumber is ${lastMinedBlockNumber}`);
-          log.info(`Last queued blockNumber is ${lastQueuedBlockNumber}`);
-          log.info(`Need to add ${totalBlockCount} new blocks to the queue`);
-        }
-        if (totalBlockCount == 0) {
-          self.populateUrBlockQueueLater(0);
-        }
-
-        let blockNumber: number = lastQueuedBlockNumber;
-        let blocksRemainingCount: number = totalBlockCount;
-        let blocksQueuedCount: number = 0;
-        while (true) {
-          blockNumber++;
-          if (blockNumber > lastMinedBlockNumber) {
-            break;
+        function recordResultsRepeatLater() {
+          if (totalBlockCount == 0) {
+            log.trace("no blocks to queue");
+            repeatLater();
+          } else {
+            log.info(`queued blocks ${lastQueuedBlockNumber + 1} through ${lastMinedBlockNumber}`);
+            self.setLastQueuedBlockNumber(lastMinedBlockNumber).then(() => {
+              repeatLater();
+            }, (error) => {
+              repeatLater();
+            });
           }
+        }
 
-          var taskRef = self.db.ref(`/urBlockQueue/tasks/${blockNumber}`);
-          taskRef.transaction((existingTask: any) => {
-            if (existingTask === null) {
-              log.trace(`block ${blockNumber} added to queue ${taskRef.toString()}`);
-              return {createdBy: "worker1"};
-            } else {
-              log.trace(`block ${blockNumber} already exists in queue - skipping`);
-              return; // cancel the transaction
+        if (totalBlockCount <= 0) {
+          recordResultsRepeatLater();
+        } else {
+          let numBlocksRemaining = totalBlockCount;
+          for (let blockNumber = lastQueuedBlockNumber + 1; blockNumber <=  lastMinedBlockNumber; blockNumber++) {
+            self.addBlockToUrBlockQueue(blockNumber).then(() => {
+              numBlocksRemaining--;
+              if (numBlocksRemaining == 0) {
+                recordResultsRepeatLater();
+              }
+            });
+          }
+        }
+      }, (error) => {
+        // error was already logged, nothing left to do
+      });
+    }, (error) => {
+      // error was already logged, nothing left to do
+    });
+  }
+
+  private addBlockToUrBlockQueue(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let taskRef = self.db.ref(`/urBlockQueue/tasks/${blockNumber}`);
+      taskRef.transaction((existingTask: any) => {
+        if (existingTask === null) {
+          log.trace(`block ${blockNumber} added to queue ${taskRef.toString()}`);
+          return {createdBy: "worker1"};
+        } else {
+          log.trace(`block ${blockNumber} already exists in queue - skipping`);
+          return; // cancel the transaction
+        }
+      }, (error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) => {
+        let blockNumberProcessed = snapshot.key;
+        if (error) {
+          log.warn(`Queueing of block ${blockNumberProcessed} failed abnormally: ${error}`);
+        } else if (committed) {
+          log.trace(`Queueing of block ${blockNumberProcessed} succeeded`);
+        } else {
+          log.debug(`Queueing of block ${blockNumberProcessed} canceled because another worker already added it`);
+        }
+        resolve();
+      });
+    });
+  }
+
+  private addTransactionsToUser(blockNumber: number, blockTimestamp: number, userId: string, urTransactions: any[]): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.getPriorBalance(blockNumber, userId).then((priorBalance: BigNumber) => {
+
+        let balance: BigNumber = priorBalance;
+        let numTransactionsRemaining = urTransactions.length;
+        let rejected = false;
+        _.each(urTransactions, (urTransaction) => {
+          balance = balance.plus(urTransaction.value);
+          if (/Infinity/.test(balance.toString())) {
+            console.log("inifity");
+          }
+          let transactionRef = self.db.ref(`/users/${userId}/transactions/${urTransaction.hash}`);
+          transactionRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
+            let oldTransaction = snapshot.val() || {};
+            return transactionRef.update({
+              createdAt: oldTransaction.createdAt || firebase.database.ServerValue.TIMESTAMP,
+              updatedAt : firebase.database.ServerValue.TIMESTAMP,
+              minedAt: blockTimestamp * 1000,
+              sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+              balance: balance.toString(),
+              urTransaction: urTransaction
+            });
+          }).then(() => {
+            numTransactionsRemaining--;
+            if (!rejected && numTransactionsRemaining == 0) {
+              resolve();
             }
-          }, (error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) => {
-            let blockNumberProcessed = snapshot.key;
-            if (error) {
-              log.warn(`Queueing of block ${blockNumberProcessed} failed abnormally: ${error}`);
-            } else if (committed) {
-              log.trace(`Queueing of block ${blockNumberProcessed} succeeded`);
-              blocksQueuedCount++;
-            } else {
-              log.debug(`Queueing of block ${blockNumberProcessed} canceled because another worker already added it`);
-            }
-            blocksRemainingCount--;
-            if (blocksRemainingCount == 0) {
-              let extraDebuggingInfo = totalBlockCount > 0 ? `(Blocks ${lastQueuedBlockNumber + 1} through ${lastMinedBlockNumber})` : '';
-              log.info(`processed ${totalBlockCount} blocks / queued ${blocksQueuedCount} blocks ${extraDebuggingInfo}`);
-              self.setLastQueuedBlockNumber(lastMinedBlockNumber).then(() => {
-                self.populateUrBlockQueueLater(totalBlockCount);
-              });
-            }
+          }, (error: string) => {
+            reject(error);
+            rejected = true;
           });
-        };
+        });
+      }, (error) => {
+        reject(error);
       });
     });
   }
 
   private processUrBlockQueue() {
-    function importTransactions(transactions: any[]) {
-      var urTransactionsRef = self.db.ref("/urTransactions");
-      _.each(transactions, (transactionHash) => {
-        urTransactionsRef.child(transactionHash).set(true);
-      });
-    }
-
     let self = this;
     let queueRef = self.db.ref("/urBlockQueue");
     let options = { 'numWorkers': 1, 'sanitize': false };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
-      let blockNumber = data._id;
+      let blockNumber = Number(data._id);
 
-      self.web3.eth.getBlock(blockNumber, true, function(error: string, result: any) {
+      self.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
-          error = `Could not get transaction for blockNumber ${blockNumber}: ${error};`
+          error = `Could not retrieve transactions for blockNumber ${blockNumber}: ${error};`
           log.warn(error);
           reject(error);
           return;
         }
 
-        let transactions: any[] = result.transactions;
+        let rejected: boolean = false;
+        function updateLastProcessedBlockNumberAndResolve() {
+          self.setLastProcessedBlockNumber(blockNumber).then(() => {
+            self.resolveIfPossible(resolve,reject,data);
+          }, (error) => {
+            reject(error);
+            rejected = true;
+          });
+        }
 
-        // import transcactions into firebase
-        var urTransactionsRef = self.db.ref("/urTransactions");
-        _.each(transactions, (transactionHash) => {
-          urTransactionsRef.child(transactionHash).set(true);
+        let urTransactions = _.sortBy(block.transactions, (t: any) => {t.transactionIndex});
+        let addresses = _.uniq(
+          _.flatten(
+            _.map(urTransactions, (t) => {
+              return [t.from, t.to];
+            })
+          )
+        );
+        let addressesRemaining = addresses.length;
+        if (addressesRemaining == 0) {
+          updateLastProcessedBlockNumberAndResolve();
+          return;
+        }
+
+        let addressToUserIdMapping: any = {};
+        _.each(addresses, (address) => {
+          self.lookupUserByAddress(address).then((result) => {
+            if (result.userId) {
+              addressToUserIdMapping[address] = result.userId;
+            }
+            addressesRemaining--;
+            if (addressesRemaining == 0) {
+              let userIds = _.uniq(_.values(addressToUserIdMapping)) as string[];
+              let userIdsRemaining = _.size(userIds);
+              _.each(userIds, (userId: string) => {
+                let associatedUrTransactions = _.filter(urTransactions, (urTransaction) => {
+                  return addressToUserIdMapping[urTransaction.from] == userId || addressToUserIdMapping[urTransaction.to] == userId;
+                });
+                self.addTransactionsToUser(blockNumber, block.timestamp, userId, associatedUrTransactions).then(() => {
+                  userIdsRemaining--;
+                  if (!rejected && userIdsRemaining == 0) {
+                    updateLastProcessedBlockNumberAndResolve();
+                  }
+                }, (error) => {
+                  reject(error);
+                  rejected = true;
+                })
+              });
+            }
+          }, (error) => {
+            reject(error);
+            rejected = true;
+          });
         });
-        self.resolveIfPossible(resolve,reject,data);
       });
-
-      // // a second way to call getBlock
-      // let restler = require("restler");
-      // let requestData = {
-      //   "jsonrpc": "2.0",
-      //   "method": "eth_getBlockByNumber",
-      //   "params": `["${self.numberToHexString(blockNumber)}",true]`,
-      //   "id": 1
-      // };
-      // restler.post('http://localhost:9595', { data: requestData }).on('complete', function(data: any, response: any) {
-      //   if (data.error) {
-      //     let error: string = `Could not get transaction for blockNumber ${blockNumber}: ${data.error.message};`
-      //     log.warn(error);
-      //     reject(error);
-      //   }
-      //   let transactions: any[] = data.tranaactions;
-      //
-      //   // import transcactions into firebase
-      //   var urTransactionsRef = self.db.ref("/urTransactions");
-      //   _.each(transactions, (transactionHash) => {
-      //     urTransactionsRef.child(transactionHash).set(true);
-      //   });
-      //   resolve(data);
-      // });
-
-      // // a third way to call getBlock
-      // let transactions: any[];
-      // try {
-      //   let command = `curl -X POST --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["${self.numberToHexString(blockNumber)}", true],"id":1}' localhost:9595`;
-      //   let shelljs = require("shelljs");
-      //   let outputString = shelljs.exec(command).stdout;
-      //   let outputObject = JSON.parse(outputString);
-      //   let result = outputObject.result
-      //   transactions = result ? result.transactions : [];
-      // } catch(e) {
-      //   let error: string = `Could not get transaction for blockNumber ${blockNumber}: ${e.message};`
-      //   log.warn(error);
-      //   reject(error);
-      //   return;
-      // }
-      // var urTransactionsRef = self.db.ref("/urTransactions");
-      // _.each(transactions, (transactionHash) => {
-      //   urTransactionsRef.child(transactionHash).set(true);
-      // });
-      // resolve(data);
     });
   }
 
@@ -526,9 +560,12 @@ export class Notifier {
   private sendMessage(phone: string, messageText: string): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
+      if (!self.twilioClient) {
+        self.twilioClient = new twilio.RestClient(self.env.TWILIO_ACCOUNT_SID, self.env.TWILIO_AUTH_TOKEN);
+      }
       self.twilioClient.messages.create({
         to: phone,
-        from: self.twilioFromNumber,
+        from: self.env.TWILIO_FROM_NUMBER,
         body: messageText
       }, (error: any) => {
         if (error) {
@@ -655,14 +692,18 @@ export class Notifier {
   private lookupUserByAddress(address: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.db.ref("/users").orderByChild("wallet/address").equalTo(address).limitToFirst(1).once(function(snapshot: firebase.database.DataSnapshot) {
+      self.db.ref("/users").orderByChild("wallet/address").equalTo(address).limitToFirst(1).once('value', function(snapshot: firebase.database.DataSnapshot) {
         let users = snapshot.val();
         let userId = _.first(_.keys(users));
         let user = _.first(_.values(users));
-        if (!userId) {
-          log.warn(`no user associated with address ${address}`);
+        if (userId) {
+          log.trace(`found user ${userId} associated with address ${address}`);
+        } else {
+          log.trace(`no user associated with address ${address}`);
         }
         resolve({user: user, userId: userId});
+      }, (error: string) => {
+        reject(error);
       });
     });
   }
@@ -700,7 +741,7 @@ export class Notifier {
         }
       }, function(error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) {
         if (error) {
-          error = `an error occurred when trying to update /lastQueuedUrBlockNumber: ${error}`;
+          error = `an error occurred when trying to update lastQueuedUrBlockNumber: ${error}`;
           log.warn(error);
           reject(error);
           return;
@@ -709,6 +750,35 @@ export class Notifier {
           log.debug(`updated lastQueuedUrBlockNumber to ${snapshot.val()}`);
         } else {
           log.debug(`didn't update lastQueuedUrBlockNumber because another worker already updated it to ${snapshot.val()}`);
+        }
+        resolve();
+      });
+    });
+  }
+
+  private setLastProcessedBlockNumber(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      var lastProcessedUrBlockNumberRef = self.db.ref("/urBlockQueue/lastProcessedUrBlockNumber");
+      lastProcessedUrBlockNumberRef.transaction(function(existingBlockNumber: number) {
+        if (existingBlockNumber === null || existingBlockNumber < blockNumber) {
+          log.trace(`proceeding - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
+          return blockNumber;
+        } else {
+          log.trace(`canceling - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
+          return; // cancel the transaction
+        }
+      }, function(error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) {
+        if (error) {
+          error = `an error occurred when trying to update lastProcessedUrBlockNumber: ${error}`;
+          log.warn(error);
+          reject(error);
+          return;
+        }
+        if (committed) {
+          log.debug(`updated lastProcessedUrBlockNumber to ${snapshot.val()}`);
+        } else {
+          log.debug(`didn't update lastProcessedUrBlockNumber because another worker already updated it to ${snapshot.val()}`);
         }
         resolve();
       });
@@ -725,6 +795,29 @@ export class Notifier {
           reject(error);
         } else {
           resolve(blockNumber);
+        }
+      });
+    });
+  }
+
+  private getPriorBalance(blockNumber: number, userId: string): Promise<BigNumber> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let priorSortKey = sprintf("%09d-999999", blockNumber - 1);
+      let query = self.db.ref(`/users/${userId}/transactions`).orderByChild('sortKey').endAt(priorSortKey).limitToLast(1);
+      query.once('value', (snapshot: firebase.database.DataSnapshot) => {
+        if (snapshot.exists()) {
+          let priorTransaction = _.last(_.values(snapshot.val())) as any;
+          if (priorTransaction.balance) {
+            let priorBalance: BigNumber = new BigNumber(priorTransaction.balance);
+            resolve(priorBalance);
+          } else {
+            log.warn("no prior balance available - using 0 instead");
+            resolve(new BigNumber(0));
+          }
+        } else {
+          // no prior transaction; start with zero balance
+          resolve(new BigNumber(0));
         }
       });
     });
