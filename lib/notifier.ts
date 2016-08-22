@@ -172,39 +172,79 @@ export class Notifier {
   private addTransactionsToUser(blockNumber: number, blockTimestamp: number, userId: string, urTransactions: any[]): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.getPriorBalance(blockNumber, userId).then((priorBalance: BigNumber) => {
-
-        let balance: BigNumber = priorBalance;
-        let numTransactionsRemaining = urTransactions.length;
-        let rejected = false;
-        _.each(urTransactions, (urTransaction) => {
-          balance = balance.plus(urTransaction.value);
-          if (/Infinity/.test(balance.toString())) {
-            console.log("inifity");
+      let numTransactionsRemaining = urTransactions.length;
+      let finalized = false;
+      _.each(urTransactions, (urTransaction) => {
+        let transactionRef = self.db.ref(`/users/${userId}/transactions/${urTransaction.hash}`);
+        transactionRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
+          let oldTransaction = snapshot.val() || {};
+          return transactionRef.update({
+            createdAt: oldTransaction.createdAt || firebase.database.ServerValue.TIMESTAMP,
+            updatedAt : firebase.database.ServerValue.TIMESTAMP,
+            minedAt: blockTimestamp * 1000,
+            sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+            urTransaction: urTransaction
+          });
+        }).then(() => {
+          return self.updateBalances(blockNumber, userId);
+        }).then(() => {
+          numTransactionsRemaining--;
+          if (!finalized && numTransactionsRemaining == 0) {
+            resolve();
+            finalized = true;
           }
-          let transactionRef = self.db.ref(`/users/${userId}/transactions/${urTransaction.hash}`);
-          transactionRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
-            let oldTransaction = snapshot.val() || {};
-            return transactionRef.update({
-              createdAt: oldTransaction.createdAt || firebase.database.ServerValue.TIMESTAMP,
-              updatedAt : firebase.database.ServerValue.TIMESTAMP,
-              minedAt: blockTimestamp * 1000,
-              sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-              balance: balance.toString(),
-              urTransaction: urTransaction
-            });
-          }).then(() => {
+        }, (error: string) => {
+          reject(error);
+          finalized = true;
+        });
+      });
+    });
+  }
+
+  private updateBalances(blockNumber: number, userId: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      return self.getPriorBalance(blockNumber, userId).then((priorBalance) => {
+        log.debug(`priorBalance=${priorBalance.toString()}`);
+        let priorSortKey = sprintf("%09d-999999", blockNumber - 1);
+        let transactionsToUpdateRef = self.db.ref(`/users/${userId}/transactions`).orderByChild('sortKey').startAt(priorSortKey);
+        transactionsToUpdateRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
+          let transactions = _.sortBy(_.values(snapshot.val()),'sortKey');
+          let numTransactionsRemaining = transactions.length;
+          log.debug(`num transactions needing balance update=${numTransactionsRemaining}`);
+
+          if (numTransactionsRemaining == 0) {
+            resolve();
+            return;
+          }
+
+          let finalized = false;
+          function resolveIfDone() {
             numTransactionsRemaining--;
-            if (!rejected && numTransactionsRemaining == 0) {
+            if (!finalized && numTransactionsRemaining == 0) {
               resolve();
+              finalized = true;
             }
-          }, (error: string) => {
-            reject(error);
-            rejected = true;
+          }
+
+          let balance: BigNumber = priorBalance;
+          _.each(transactions, (transaction: any) => {
+            if (!transaction.urTransaction.value) {
+              resolveIfDone();
+              return;
+            }
+
+            balance = balance.plus(transaction.urTransaction.value);
+            let transactionRef = self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`);
+            transactionRef.update({balance: balance.toString()}).then(() => {
+              log.debug(`updated balance of ${transaction.sortKey} to ${balance.toString()}`);
+              resolveIfDone();
+            }, (error: string) => {
+              reject(error);
+              finalized = true;
+            });
           });
         });
-      }, (error) => {
-        reject(error);
       });
     });
   }
@@ -224,13 +264,14 @@ export class Notifier {
           return;
         }
 
-        let rejected: boolean = false;
+        let finalized = false;
         function updateLastProcessedBlockNumberAndResolve() {
           self.setLastProcessedBlockNumber(blockNumber).then(() => {
             self.resolveIfPossible(resolve,reject,data);
+            finalized = true;
           }, (error) => {
             reject(error);
-            rejected = true;
+            finalized = true;
           });
         }
 
@@ -264,18 +305,18 @@ export class Notifier {
                 });
                 self.addTransactionsToUser(blockNumber, block.timestamp, userId, associatedUrTransactions).then(() => {
                   userIdsRemaining--;
-                  if (!rejected && userIdsRemaining == 0) {
+                  if (!finalized && userIdsRemaining == 0) {
                     updateLastProcessedBlockNumberAndResolve();
                   }
                 }, (error) => {
                   reject(error);
-                  rejected = true;
+                  finalized = true;
                 })
               });
             }
           }, (error) => {
             reject(error);
-            rejected = true;
+            finalized = true;
           });
         });
       });
@@ -407,7 +448,7 @@ export class Notifier {
     let self = this;
     let queueRef = self.db.ref("/phoneLookupQueue");
     let options = { 'specId': 'phone_lookup', 'numWorkers': 1, 'sanitize': false };
-    let rejected: boolean = false;
+    let finalized = false;
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
       data.phones = data.phones || [];
       let phonesRemaining = data.phones.length;
@@ -424,16 +465,17 @@ export class Notifier {
             };
           }
           phonesRemaining--;
-          if (phonesRemaining == 0 && !rejected) {
+          if (!finalized && phonesRemaining == 0) {
             log.debug(`phoneLookup ${data._id} - finished - ${data.phones.length} contacts`);
             data.result = { numMatches: _.size(phoneToUserMapping) };
             if (data.result.numMatches > 0) {
               data.result.phoneToUserMapping = phoneToUserMapping;
             }
             self.resolveIfPossible(resolve,reject,data);
+            finalized = true
           }
         }, (error) => {
-          rejected = true;
+          finalized = true;
           reject(error);
         });
       });
