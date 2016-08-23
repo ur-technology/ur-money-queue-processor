@@ -255,6 +255,7 @@ export class Notifier {
     let options = { 'numWorkers': 1, 'sanitize': false };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
       let blockNumber = Number(data._id);
+      console.log(`begin processing blockNumber ${blockNumber}`)
 
       self.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
@@ -448,12 +449,12 @@ export class Notifier {
     let self = this;
     let queueRef = self.db.ref("/phoneLookupQueue");
     let options = { 'specId': 'phone_lookup', 'numWorkers': 1, 'sanitize': false };
-    let finalized = false;
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
       data.phones = data.phones || [];
       let phonesRemaining = data.phones.length;
-      log.debug(`phoneLookup ${data._id} - started`);
+      log.debug(`phoneLookup ${data._id} - looking up ${phonesRemaining} contacts`);
       let phoneToUserMapping: any = {};
+      let finalized = false;
       _.each(data.phones, (phone) => {
         self.lookupSignedUpUserByPhone(phone).then((result) => {
           if (result.signedUpUser) {
@@ -466,13 +467,14 @@ export class Notifier {
           }
           phonesRemaining--;
           if (!finalized && phonesRemaining == 0) {
-            log.debug(`phoneLookup ${data._id} - finished - ${data.phones.length} contacts`);
             data.result = { numMatches: _.size(phoneToUserMapping) };
             if (data.result.numMatches > 0) {
               data.result.phoneToUserMapping = phoneToUserMapping;
             }
+            data._state = "finished";
             self.resolveIfPossible(resolve,reject,data);
             finalized = true
+            log.debug(`phoneLookup ${data._id} - finished`);
           }
         }, (error) => {
           finalized = true;
