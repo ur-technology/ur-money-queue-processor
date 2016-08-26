@@ -75,7 +75,7 @@ export class Notifier {
         if (snapshot.exists()) {
           resolve();
         } else {
-          tasksRef.child(1620).set({_state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP}).then(() => {
+          tasksRef.child(1).set({_state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP}).then(() => {
             resolve();
           }, (error: string) => {
             reject(error);
