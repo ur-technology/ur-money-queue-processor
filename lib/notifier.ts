@@ -75,7 +75,7 @@ export class Notifier {
         if (snapshot.exists()) {
           resolve();
         } else {
-          tasksRef.child(1).set({delay: false}).then(() => {
+          tasksRef.child(1620).set({_state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP}).then(() => {
             resolve();
           }, (error: string) => {
             reject(error);
@@ -110,8 +110,17 @@ export class Notifier {
         "timeout": 30000
       });
     }).then(() => {
-      return self.ensureQueueSpecLoaded("/urBlockQueue/specs/import_ur_block", {
-        "in_progress_state": "in_progress",
+      return self.ensureQueueSpecLoaded("/urBlockQueue/specs/import", {
+        "start_state": "ready_to_import",
+        "in_progress_state": "processing",
+        "error_state": "error",
+        "timeout": 120000,
+        "retries": 5
+      });
+    }).then(() => {
+      return self.ensureQueueSpecLoaded("/urBlockQueue/specs/wait", {
+        "start_state": "ready_to_wait",
+        "in_progress_state": "waiting",
         "error_state": "error",
         "timeout": 120000,
         "retries": 5
@@ -150,7 +159,7 @@ export class Notifier {
         let balance = priorBalance;
         let finalized = false;
         _.each(transactions, (transaction: any) => {
-          balance = balance.plus(new BigNumber(transaction.urTransaction.value));
+          balance = balance.plus(new BigNumber(transaction.amount));
           transaction.balance = balance.toPrecision();
           if (transaction.type != "earned") {
             transaction.type = transaction.sender.userId == userId ? "sent" : "received";
@@ -202,144 +211,36 @@ export class Notifier {
   private processUrBlockQueue() {
     let self = this;
     let queueRef = self.db.ref("/urBlockQueue");
-    let options = { 'specId': 'import_ur_block', 'numWorkers': 1, sanitize: false };
-    let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
+
+    let wait_options = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
+    let wait_queue = new Queue(queueRef, wait_options, (data: any, progress: any, resolve: any, reject: any) => {
+      let blockNumber: number = parseInt(data._id);
+      setTimeout(() => {
+        resolve({_new_state: "ready_to_import"});
+      }, 15*1000);
+    });
+
+    let import_options = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
+    let import_queue = new Queue(queueRef, import_options, (data: any, progress: any, resolve: any, reject: any) => {
       let blockNumber: number = parseInt(data._id);
 
       let lastMinedBlockNumber = self.web3.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
-        resolve(_.merge(data,{_state: null, delay: true}));
+        resolve({_new_state: "ready_to_wait"});
         return;
       }
 
-      setTimeout(() => {
-        self.importTransactions(blockNumber).then(() => {
-          // queue another task to import the next block
-          self.db.ref(`/urBlockQueue/tasks/${blockNumber + 1}`).set({delay: false}).then(() => {
-            resolve(data);
-          }, (error: string) => {
-            log.warn(`unable to add task for next block to queue: ${error}`)
-            resolve(data);
-          });
-        }, (error) => {
-          reject(error);
-        });
-      }, data.delay ? 15*1000 : 0);
-    });
-  }
-
-  private importTransactions(blockNumber: number): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-
-      self.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
-        if (error) {
-          error = `Could not retrieve transactions for blockNumber ${blockNumber}: ${error};`
-          log.warn(error);
-          reject(error);
-          return;
-        }
-
-        let urTransactions = _.sortBy(block.transactions, 'transactionIndex');
-        if (urTransactions.length == 0) {
-          resolve();
-          return;
-        }
-
-        let uniqueAddresses = _.uniq(_.map(urTransactions, 'from').concat(_.map(urTransactions, 'to'))) as string[];
-        let transactions: any[];
-        self.lookupUsersByAddresses(uniqueAddresses).then((addressToUserMapping) => {
-          self.buildTransactions(urTransactions, block.timestamp, addressToUserMapping).then((transactions) => {
-            self.addTransactionsToRoot(blockNumber, transactions).then(() => {
-
-              let users =  _.values(addressToUserMapping);
-              let userIds = _.uniq(_.map(users, 'userId')) as string[];
-              let userIdsRemaining = userIds.length;
-              let finalized = false;
-              _.each(userIds, (userId) => {
-                let associatedTransactions = _.filter(transactions, (t: any) => {
-                  return t.sender.userId == userId || t.receiver.userId == userId;
-                });
-                self.addTransactionsToUser(blockNumber, associatedTransactions, userId).then(() => {
-                  userIdsRemaining--;
-                  if (!finalized && userIdsRemaining == 0) {
-                    resolve();
-                    finalized = true;
-                  };
-                }, (error: string) => {
-                  reject(error);
-                  finalized = true;
-                });
-              });
-
-            }, (error: string) => {
-              reject(error);
-            });
-          }, (error: string) => {
-            reject(error);
-          });
+      self.importTransactions(blockNumber).then(() => {
+        // queue another task to import the next block
+        self.db.ref(`/urBlockQueue/tasks/${blockNumber + 1}`).set({_state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP}).then(() => {
+          resolve(data);
         }, (error: string) => {
-          reject(error);
+          log.warn(`unable to add task for next block to queue: ${error}`)
+          resolve(data);
         });
-      });
-    });
-  }
-
-  private buildTransaction(urTransaction: any, blockTimestamp: number, addressToUserMapping: any, existingTransaction: any): any {
-    let fromUser: any = addressToUserMapping[urTransaction.from] || { name: "Unknown User" };
-    let toUser: any = addressToUserMapping[urTransaction.to] || { name: "Unknown User" };
-    let transaction: any = {
-      createdAt: firebase.database.ServerValue.TIMESTAMP,
-      sender: _.pick(fromUser, ['name', 'profilePhotoUrl', 'userId']),
-      receiver: _.pick(toUser, ['name', 'profilePhotoUrl', 'userId']),
-      source: "external"
-    };
-    _.merge(transaction, existingTransaction);
-    _.merge(transaction, {
-      updatedAt: firebase.database.ServerValue.TIMESTAMP,
-      minedAt: blockTimestamp * 1000,
-      sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-      urTransaction: urTransaction,
-    });
-    if (this.isPrivilegedAddress(urTransaction.from)) {
-      _.merge(transaction, {type: "earned"});
-    }
-    return transaction;
-  }
-
-  private isPrivilegedAddress(address: string): boolean {
-    let privilegedAddresses = [
-      "0x5d32e21bf3594aa66c205fde8dbee3dc726bd61d",
-      "0x9194d1fa799d9feb9755aadc2aa28ba7904b0efd",
-      "0xab4b7eeb95b56bae3b2630525b4d9165f0cab172",
-      "0xea82e994a02fb137ffaca8051b24f8629b478423",
-      "0xb1626c3fc1662410d85d83553d395cabba148be1",
-      "0x65afd2c418a1005f678f9681f50595071e936d7c",
-      "0x49158a28df943acd20be7c8e758d8f4a9dc07d05"
-    ];
-    return _.includes(privilegedAddresses, address);
-  }
-
-  private buildTransactions(urTransactions: any[], blockTimestamp: number, addressToUserMapping: any): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      let transactions: any[] = [];
-      let finalized = false
-      let urTransactionsRemaining = urTransactions.length;
-      _.each(urTransactions, (urTransaction) => {
-        self.db.ref(`/transactions/${urTransaction.hash}`).once('value', (existingTransactionSnapshot: firebase.database.DataSnapshot) => {
-          let transaction =  self.buildTransaction(urTransaction, blockTimestamp, addressToUserMapping, existingTransactionSnapshot.val() || {});
-          transactions.push(transaction);
-          urTransactionsRemaining--;
-          if (!finalized && urTransactionsRemaining == 0) {
-            resolve(transactions);
-            finalized == true;
-          }
-        }, (error: string) => {
-          reject(error);
-          finalized == true;
-        });
+      }, (error) => {
+        reject(error);
       });
     });
   }
@@ -363,7 +264,7 @@ export class Notifier {
             } else {
               data.userId = matchingUserId;
               data.verificationCode = verificationCode;
-              data._state = "code_generation_completed_and_sms_sent";
+              data._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
               self.resolveIfPossible(resolve,reject,data);
             }
           });
@@ -557,6 +458,124 @@ export class Notifier {
   //////////////////////////////////////////////
   // helper functions
   //////////////////////////////////////////////
+
+  private importTransactions(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+
+      self.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
+        if (error) {
+          error = `Could not retrieve transactions for blockNumber ${blockNumber}: ${error};`
+          log.warn(error);
+          reject(error);
+          return;
+        }
+
+        let urTransactions = _.sortBy(block.transactions, 'transactionIndex');
+        if (urTransactions.length == 0) {
+          resolve();
+          return;
+        }
+
+        let uniqueAddresses = _.uniq(_.map(urTransactions, 'from').concat(_.map(urTransactions, 'to'))) as string[];
+        let transactions: any[];
+        self.lookupUsersByAddresses(uniqueAddresses).then((addressToUserMapping) => {
+          self.buildTransactions(urTransactions, block.timestamp, addressToUserMapping).then((transactions) => {
+            self.addTransactionsToRoot(blockNumber, transactions).then(() => {
+
+              let users =  _.values(addressToUserMapping);
+              let userIds = _.uniq(_.map(users, 'userId')) as string[];
+              let userIdsRemaining = userIds.length;
+              let finalized = false;
+              _.each(userIds, (userId) => {
+                let associatedTransactions = _.filter(transactions, (t: any) => {
+                  return t.sender.userId == userId || t.receiver.userId == userId;
+                });
+                self.addTransactionsToUser(blockNumber, associatedTransactions, userId).then(() => {
+                  userIdsRemaining--;
+                  if (!finalized && userIdsRemaining == 0) {
+                    resolve();
+                    finalized = true;
+                  };
+                }, (error: string) => {
+                  reject(error);
+                  finalized = true;
+                });
+              });
+
+            }, (error: string) => {
+              reject(error);
+            });
+          }, (error: string) => {
+            reject(error);
+          });
+        }, (error: string) => {
+          reject(error);
+        });
+      });
+    });
+  }
+
+  private buildTransaction(urTransaction: any, blockTimestamp: number, addressToUserMapping: any, existingTransaction: any): any {
+    let fromUser: any = addressToUserMapping[urTransaction.from] || { name: "Unknown User" };
+    let toUser: any = addressToUserMapping[urTransaction.to] || { name: "Unknown User" };
+    let transaction: any = {
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      sender: _.pick(fromUser, ['name', 'profilePhotoUrl', 'userId']),
+      receiver: _.pick(toUser, ['name', 'profilePhotoUrl', 'userId']),
+      source: "external"
+    };
+    _.merge(transaction, existingTransaction);
+    _.merge(transaction, {
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      minedAt: blockTimestamp * 1000,
+      sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+      urTransaction: _.merge(urTransaction,{gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString()})
+    });
+    if (this.isPrivilegedTransaction(transaction)) {
+      transaction.type = "earned";
+      transaction.amount = new BigNumber(transaction.urTransaction.value).times(1000000000000000).toPrecision();
+    } else {
+      transaction.amount = transaction.urTransaction.value;
+    }
+    return transaction;
+  }
+
+  private isPrivilegedTransaction(transaction: any): boolean {
+    let privilegedAddresses = [
+      "0x5d32e21bf3594aa66c205fde8dbee3dc726bd61d",
+      "0x9194d1fa799d9feb9755aadc2aa28ba7904b0efd",
+      "0xab4b7eeb95b56bae3b2630525b4d9165f0cab172",
+      "0xea82e994a02fb137ffaca8051b24f8629b478423",
+      "0xb1626c3fc1662410d85d83553d395cabba148be1",
+      "0x65afd2c418a1005f678f9681f50595071e936d7c",
+      "0x49158a28df943acd20be7c8e758d8f4a9dc07d05"
+    ];
+    return _.includes(privilegedAddresses, transaction.urTransaction.from);
+  }
+
+  private buildTransactions(urTransactions: any[], blockTimestamp: number, addressToUserMapping: any): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let transactions: any[] = [];
+      let finalized = false
+      let urTransactionsRemaining = urTransactions.length;
+      _.each(urTransactions, (urTransaction) => {
+        self.db.ref(`/transactions/${urTransaction.hash}`).once('value', (existingTransactionSnapshot: firebase.database.DataSnapshot) => {
+          let transaction =  self.buildTransaction(urTransaction, blockTimestamp, addressToUserMapping, existingTransactionSnapshot.val() || {});
+          transactions.push(transaction);
+          urTransactionsRemaining--;
+          if (!finalized && urTransactionsRemaining == 0) {
+            resolve(transactions);
+            finalized == true;
+          }
+        }, (error: string) => {
+          reject(error);
+          finalized == true;
+        });
+      });
+    });
+  }
 
   private lookupChatSummary(userId: string, chatId: string): Promise<any> {
     let self = this;
