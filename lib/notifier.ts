@@ -24,7 +24,7 @@ export class Notifier {
   }
 
   start() {
-    this.setUpQueueSpecs().then(() => {
+    this.setUpQueues().then(() => {
       this.processPhoneAuthenticationQueueForCodeGeneration();
       this.processPhoneAuthenticationQueueForCodeMatching();
       this.processChatSummaryCopyingQueue();
@@ -32,8 +32,7 @@ export class Notifier {
       this.processPhoneLookupQueue();
       this.processInvitationQueue();
       if (this.env.PROCESSING_UR_BLOCKS == "true") {
-        this.addRecentlyMinedBlocksToUrBlockQueue();
-        this.processUrBlockQueue()
+        this.processUrBlockQueue();
       }
     });
   };
@@ -58,7 +57,37 @@ export class Notifier {
     });
   }
 
-  private setUpQueueSpecs(): Promise<any> {
+  private setUpURBlockQueue(): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      if (!this.web3) {
+        // NOTE: This code assumes a tunnel to the rpc node is open.
+        //       Run this to check for tunnel: nc -z localhost 9595 || echo 'no tunnel open'
+        //       Run this to set up tunnel: RPCNODE1=45.55.7.79 ssh -f -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@${RPCNODE1}
+
+        let Web3 = require('web3');
+        this.web3 = new Web3();
+        this.web3.setProvider(new this.web3.providers.HttpProvider('http://localhost:9595'));
+      }
+
+      let tasksRef = this.db.ref(`/urBlockQueue/tasks`);
+      tasksRef.once('value', (snapshot: firebase.database.DataSnapshot) => {
+        if (snapshot.exists()) {
+          resolve();
+        } else {
+          tasksRef.child(1).set({delay: false}).then(() => {
+            resolve();
+          }, (error: string) => {
+            reject(error);
+          });
+        }
+      }, (error: string) => {
+        reject(error);
+      });
+    });
+  }
+
+  private setUpQueues(): Promise<any> {
     let self = this;
     return self.ensureQueueSpecLoaded("/phoneAuthenticationQueue/specs/code_generation", {
       "in_progress_state": "code_generation_in_progress",
@@ -80,114 +109,26 @@ export class Notifier {
         "error_state": "error",
         "timeout": 30000
       });
+    }).then(() => {
+      return self.ensureQueueSpecLoaded("/urBlockQueue/specs/import_ur_block", {
+        "in_progress_state": "in_progress",
+        "error_state": "error",
+        "timeout": 120000,
+        "retries": 5
+      });
+    }).then(() => {
+      return self.setUpURBlockQueue();
     });
   };
 
-  private addRecentlyMinedBlocksToUrBlockQueue() {
-    let self = this;
-
-    if (!self.web3) {
-      // NOTE: This code assumes a tunnel to the rpc node is open.
-      //       Run this to check for tunnel: nc -z localhost 9595 || echo 'no tunnel open'
-      //       Run this to set up tunnel: RPCNODE1=45.55.7.79 ssh -f -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@${RPCNODE1}
-
-      let Web3 = require('web3');
-      self.web3 = new Web3();
-      self.web3.setProvider(new this.web3.providers.HttpProvider('http://localhost:9595'));
-    }
-
-    self.getLastQueuedBlockNumber().then((lastQueuedBlockNumber: number) => {
-      self.getLastMinedBlockNumber().then((lastMinedBlockNumber: number) => {
-
-        lastQueuedBlockNumber = lastQueuedBlockNumber || 0;
-        lastMinedBlockNumber = lastMinedBlockNumber || 0;
-        let totalBlockCount = lastMinedBlockNumber - lastQueuedBlockNumber;
-
-        function repeatLater() {
-          log.trace("sleeping for 15 seconds");
-          setTimeout(function() { self.addRecentlyMinedBlocksToUrBlockQueue(); }, 15000); // calling self in 15 seconds
-        }
-
-        function recordResultsRepeatLater() {
-          if (totalBlockCount == 0) {
-            log.trace("no blocks to queue");
-            repeatLater();
-          } else {
-            log.info(`queued blocks ${lastQueuedBlockNumber + 1} through ${lastMinedBlockNumber}`);
-            self.setLastQueuedBlockNumber(lastMinedBlockNumber).then(() => {
-              repeatLater();
-            }, (error) => {
-              repeatLater();
-            });
-          }
-        }
-
-        if (totalBlockCount <= 0) {
-          recordResultsRepeatLater();
-        } else {
-          let numBlocksRemaining = totalBlockCount;
-          for (let blockNumber = lastQueuedBlockNumber + 1; blockNumber <=  lastMinedBlockNumber; blockNumber++) {
-            self.addBlockToUrBlockQueue(blockNumber).then(() => {
-              numBlocksRemaining--;
-              if (numBlocksRemaining == 0) {
-                recordResultsRepeatLater();
-              }
-            });
-          }
-        }
-      }, (error) => {
-        // error was already logged, nothing left to do
-      });
-    }, (error) => {
-      // error was already logged, nothing left to do
-    });
-  }
-
-  private addBlockToUrBlockQueue(blockNumber: number): Promise<any> {
+  private addTransactionsToRoot(blockNumber: number, transactions: any[]): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      let taskRef = self.db.ref(`/urBlockQueue/tasks/${blockNumber}`);
-      taskRef.transaction((existingTask: any) => {
-        if (existingTask === null) {
-          log.trace(`block ${blockNumber} added to queue ${taskRef.toString()}`);
-          return {createdBy: "worker1"};
-        } else {
-          log.trace(`block ${blockNumber} already exists in queue - skipping`);
-          return; // cancel the transaction
-        }
-      }, (error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) => {
-        let blockNumberProcessed = snapshot.key;
-        if (error) {
-          log.warn(`Queueing of block ${blockNumberProcessed} failed abnormally: ${error}`);
-        } else if (committed) {
-          log.trace(`Queueing of block ${blockNumberProcessed} succeeded`);
-        } else {
-          log.debug(`Queueing of block ${blockNumberProcessed} canceled because another worker already added it`);
-        }
-        resolve();
-      });
-    });
-  }
-
-  private addTransactionsToUser(blockNumber: number, blockTimestamp: number, userId: string, urTransactions: any[]): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      let numTransactionsRemaining = urTransactions.length;
+      let numTransactionsRemaining = transactions.length;
       let finalized = false;
-      _.each(urTransactions, (urTransaction) => {
-        let transactionRef = self.db.ref(`/users/${userId}/transactions/${urTransaction.hash}`);
-        transactionRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
-          let oldTransaction = snapshot.val() || {};
-          return transactionRef.update({
-            createdAt: oldTransaction.createdAt || firebase.database.ServerValue.TIMESTAMP,
-            updatedAt : firebase.database.ServerValue.TIMESTAMP,
-            minedAt: blockTimestamp * 1000,
-            sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-            urTransaction: urTransaction
-          });
-        }).then(() => {
-          return self.updateBalances(blockNumber, userId);
-        }).then(() => {
+      _.each(transactions, (transaction) => {
+        let transactionRef = self.db.ref(`/transactions/${transaction.urTransaction.hash}`);
+        transactionRef.set(transaction).then(() => {
           numTransactionsRemaining--;
           if (!finalized && numTransactionsRemaining == 0) {
             resolve();
@@ -201,61 +142,96 @@ export class Notifier {
     });
   }
 
-  private updateBalances(blockNumber: number, userId: string): Promise<any> {
+  private addTransactionsToUser(blockNumber: number, transactions: any[], userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      return self.getPriorBalance(blockNumber, userId).then((priorBalance) => {
-        log.debug(`priorBalance=${priorBalance.toString()}`);
-        let priorSortKey = sprintf("%09d-999999", blockNumber - 1);
-        let transactionsToUpdateRef = self.db.ref(`/users/${userId}/transactions`).orderByChild('sortKey').startAt(priorSortKey);
-        transactionsToUpdateRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
-          let transactions = _.sortBy(_.values(snapshot.val()),'sortKey');
-          let numTransactionsRemaining = transactions.length;
-          log.debug(`num transactions needing balance update=${numTransactionsRemaining}`);
-
-          if (numTransactionsRemaining == 0) {
-            resolve();
-            return;
+      self.getPriorBalance(blockNumber, userId).then((priorBalance: BigNumber) => {
+        let transactionsRemaining = transactions.length;
+        let balance = priorBalance;
+        let finalized = false;
+        _.each(transactions, (transaction: any) => {
+          balance = balance.plus(new BigNumber(transaction.urTransaction.value));
+          transaction.balance = balance.toPrecision();
+          if (transaction.type != "earned") {
+            transaction.type = transaction.sender.userId == userId ? "sent" : "received";
           }
-
-          let finalized = false;
-          function resolveIfDone() {
-            numTransactionsRemaining--;
-            if (!finalized && numTransactionsRemaining == 0) {
+          self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
+            transactionsRemaining--;
+            if (!finalized && transactionsRemaining == 0) {
               resolve();
               finalized = true;
             }
-          }
-
-          let balance: BigNumber = priorBalance;
-          _.each(transactions, (transaction: any) => {
-            if (!transaction.urTransaction.value) {
-              resolveIfDone();
-              return;
-            }
-
-            balance = balance.plus(transaction.urTransaction.value);
-            let transactionRef = self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`);
-            transactionRef.update({balance: balance.toString()}).then(() => {
-              log.debug(`updated balance of ${transaction.sortKey} to ${balance.toString()}`);
-              resolveIfDone();
-            }, (error: string) => {
-              reject(error);
-              finalized = true;
-            });
+          }, (error: string) => {
+            reject(error);
+            finalized = true;
           });
         });
+      }, (error: string) => {
+        reject(error);
       });
     });
+  }
+
+  private lookupUsersByAddresses(addresses: string[]): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let addressesRemaining = _.size(addresses);
+      if (addressesRemaining == 0) {
+        resolve({});
+        return;
+      }
+
+      let addressToUserMapping: any = {}
+      _.each(addresses, (address) => {
+        self.lookupUserByAddress(address).then((result) => {
+          if (result.user) {
+            addressToUserMapping[address] = result.user;
+            addressToUserMapping[address].userId = result.userId;
+          }
+          addressesRemaining--;
+          if (addressesRemaining == 0) {
+            resolve(addressToUserMapping);
+          }
+        }, (error) => {
+          reject(error);
+        })
+      });
+    })
   }
 
   private processUrBlockQueue() {
     let self = this;
     let queueRef = self.db.ref("/urBlockQueue");
-    let options = { 'numWorkers': 1, 'sanitize': false };
+    let options = { 'specId': 'import_ur_block', 'numWorkers': 1, sanitize: false };
     let queue = new Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
-      let blockNumber = Number(data._id);
-      console.log(`begin processing blockNumber ${blockNumber}`)
+      let blockNumber: number = parseInt(data._id);
+
+      let lastMinedBlockNumber = self.web3.eth.blockNumber;
+      if (blockNumber > lastMinedBlockNumber) {
+        // let's wait for more blocks to get mined
+        resolve(_.merge(data,{_state: null, delay: true}));
+        return;
+      }
+
+      setTimeout(() => {
+        self.importTransactions(blockNumber).then(() => {
+          // queue another task to import the next block
+          self.db.ref(`/urBlockQueue/tasks/${blockNumber + 1}`).set({delay: false}).then(() => {
+            resolve(data);
+          }, (error: string) => {
+            log.warn(`unable to add task for next block to queue: ${error}`)
+            resolve(data);
+          });
+        }, (error) => {
+          reject(error);
+        });
+      }, data.delay ? 15*1000 : 0);
+    });
+  }
+
+  private importTransactions(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
 
       self.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
@@ -265,60 +241,104 @@ export class Notifier {
           return;
         }
 
-        let finalized = false;
-        function updateLastProcessedBlockNumberAndResolve() {
-          self.setLastProcessedBlockNumber(blockNumber).then(() => {
-            self.resolveIfPossible(resolve,reject,data);
-            finalized = true;
-          }, (error) => {
-            reject(error);
-            finalized = true;
-          });
-        }
-
-        let urTransactions = _.sortBy(block.transactions, (t: any) => {t.transactionIndex});
-        let addresses = _.uniq(
-          _.flatten(
-            _.map(urTransactions, (t) => {
-              return [t.from, t.to];
-            })
-          )
-        );
-        let addressesRemaining = addresses.length;
-        if (addressesRemaining == 0) {
-          updateLastProcessedBlockNumberAndResolve();
+        let urTransactions = _.sortBy(block.transactions, 'transactionIndex');
+        if (urTransactions.length == 0) {
+          resolve();
           return;
         }
 
-        let addressToUserIdMapping: any = {};
-        _.each(addresses, (address) => {
-          self.lookupUserByAddress(address).then((result) => {
-            if (result.userId) {
-              addressToUserIdMapping[address] = result.userId;
-            }
-            addressesRemaining--;
-            if (addressesRemaining == 0) {
-              let userIds = _.uniq(_.values(addressToUserIdMapping)) as string[];
-              let userIdsRemaining = _.size(userIds);
-              _.each(userIds, (userId: string) => {
-                let associatedUrTransactions = _.filter(urTransactions, (urTransaction) => {
-                  return addressToUserIdMapping[urTransaction.from] == userId || addressToUserIdMapping[urTransaction.to] == userId;
+        let uniqueAddresses = _.uniq(_.map(urTransactions, 'from').concat(_.map(urTransactions, 'to'))) as string[];
+        let transactions: any[];
+        self.lookupUsersByAddresses(uniqueAddresses).then((addressToUserMapping) => {
+          self.buildTransactions(urTransactions, block.timestamp, addressToUserMapping).then((transactions) => {
+            self.addTransactionsToRoot(blockNumber, transactions).then(() => {
+
+              let users =  _.values(addressToUserMapping);
+              let userIds = _.uniq(_.map(users, 'userId')) as string[];
+              let userIdsRemaining = userIds.length;
+              let finalized = false;
+              _.each(userIds, (userId) => {
+                let associatedTransactions = _.filter(transactions, (t: any) => {
+                  return t.sender.userId == userId || t.receiver.userId == userId;
                 });
-                self.addTransactionsToUser(blockNumber, block.timestamp, userId, associatedUrTransactions).then(() => {
+                self.addTransactionsToUser(blockNumber, associatedTransactions, userId).then(() => {
                   userIdsRemaining--;
                   if (!finalized && userIdsRemaining == 0) {
-                    updateLastProcessedBlockNumberAndResolve();
-                  }
-                }, (error) => {
+                    resolve();
+                    finalized = true;
+                  };
+                }, (error: string) => {
                   reject(error);
                   finalized = true;
-                })
+                });
               });
-            }
-          }, (error) => {
+
+            }, (error: string) => {
+              reject(error);
+            });
+          }, (error: string) => {
             reject(error);
-            finalized = true;
           });
+        }, (error: string) => {
+          reject(error);
+        });
+      });
+    });
+  }
+
+  private buildTransaction(urTransaction: any, blockTimestamp: number, addressToUserMapping: any, existingTransaction: any): any {
+    let fromUser: any = addressToUserMapping[urTransaction.from] || { name: "Unknown User" };
+    let toUser: any = addressToUserMapping[urTransaction.to] || { name: "Unknown User" };
+    let transaction: any = {
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      sender: _.pick(fromUser, ['name', 'profilePhotoUrl', 'userId']),
+      receiver: _.pick(toUser, ['name', 'profilePhotoUrl', 'userId']),
+      source: "external"
+    };
+    _.merge(transaction, existingTransaction);
+    _.merge(transaction, {
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      minedAt: blockTimestamp * 1000,
+      sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+      urTransaction: urTransaction,
+    });
+    if (this.isPrivilegedAddress(urTransaction.from)) {
+      _.merge(transaction, {type: "earned"});
+    }
+    return transaction;
+  }
+
+  private isPrivilegedAddress(address: string): boolean {
+    let privilegedAddresses = [
+      "0x5d32e21bf3594aa66c205fde8dbee3dc726bd61d",
+      "0x9194d1fa799d9feb9755aadc2aa28ba7904b0efd",
+      "0xab4b7eeb95b56bae3b2630525b4d9165f0cab172",
+      "0xea82e994a02fb137ffaca8051b24f8629b478423",
+      "0xb1626c3fc1662410d85d83553d395cabba148be1",
+      "0x65afd2c418a1005f678f9681f50595071e936d7c",
+      "0x49158a28df943acd20be7c8e758d8f4a9dc07d05"
+    ];
+    return _.includes(privilegedAddresses, address);
+  }
+
+  private buildTransactions(urTransactions: any[], blockTimestamp: number, addressToUserMapping: any): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let transactions: any[] = [];
+      let finalized = false
+      let urTransactionsRemaining = urTransactions.length;
+      _.each(urTransactions, (urTransaction) => {
+        self.db.ref(`/transactions/${urTransaction.hash}`).once('value', (existingTransactionSnapshot: firebase.database.DataSnapshot) => {
+          let transaction =  self.buildTransaction(urTransaction, blockTimestamp, addressToUserMapping, existingTransactionSnapshot.val() || {});
+          transactions.push(transaction);
+          urTransactionsRemaining--;
+          if (!finalized && urTransactionsRemaining == 0) {
+            resolve(transactions);
+            finalized == true;
+          }
+        }, (error: string) => {
+          reject(error);
+          finalized == true;
         });
       });
     });
@@ -760,90 +780,6 @@ export class Notifier {
     return parseInt(hexString,16);
   }
 
-  private getLastQueuedBlockNumber(): Promise<number> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      self.db.ref("/urBlockQueue/lastQueuedUrBlockNumber").once('value', function(snapshot: firebase.database.DataSnapshot) {
-        resolve(snapshot.val());
-      }, (error: string) => {
-        reject(error);
-      });
-    });
-  }
-
-  private setLastQueuedBlockNumber(blockNumber: number): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      var lastQueuedUrBlockNumberRef = self.db.ref("/urBlockQueue/lastQueuedUrBlockNumber");
-      lastQueuedUrBlockNumberRef.transaction(function(existingBlockNumber: number) {
-        if (existingBlockNumber === null || existingBlockNumber < blockNumber) {
-          log.trace(`proceeding - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
-          return blockNumber;
-        } else {
-          log.trace(`canceling - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
-          return; // cancel the transaction
-        }
-      }, function(error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) {
-        if (error) {
-          error = `an error occurred when trying to update lastQueuedUrBlockNumber: ${error}`;
-          log.warn(error);
-          reject(error);
-          return;
-        }
-        if (committed) {
-          log.debug(`updated lastQueuedUrBlockNumber to ${snapshot.val()}`);
-        } else {
-          log.debug(`didn't update lastQueuedUrBlockNumber because another worker already updated it to ${snapshot.val()}`);
-        }
-        resolve();
-      });
-    });
-  }
-
-  private setLastProcessedBlockNumber(blockNumber: number): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      var lastProcessedUrBlockNumberRef = self.db.ref("/urBlockQueue/lastProcessedUrBlockNumber");
-      lastProcessedUrBlockNumberRef.transaction(function(existingBlockNumber: number) {
-        if (existingBlockNumber === null || existingBlockNumber < blockNumber) {
-          log.trace(`proceeding - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
-          return blockNumber;
-        } else {
-          log.trace(`canceling - existingBlockNumber ${existingBlockNumber} / blockNumber ${blockNumber}`);
-          return; // cancel the transaction
-        }
-      }, function(error: string, committed: boolean, snapshot: firebase.database.DataSnapshot) {
-        if (error) {
-          error = `an error occurred when trying to update lastProcessedUrBlockNumber: ${error}`;
-          log.warn(error);
-          reject(error);
-          return;
-        }
-        if (committed) {
-          log.debug(`updated lastProcessedUrBlockNumber to ${snapshot.val()}`);
-        } else {
-          log.debug(`didn't update lastProcessedUrBlockNumber because another worker already updated it to ${snapshot.val()}`);
-        }
-        resolve();
-      });
-    });
-  }
-
-  private getLastMinedBlockNumber(): Promise<number> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      self.web3.eth.getBlockNumber(function(error: string, blockNumber: number) {
-        if (error) {
-          error = `Unable to retrieve latest block number: ${error}`;
-          log.warn(error);
-          reject(error);
-        } else {
-          resolve(blockNumber);
-        }
-      });
-    });
-  }
-
   private getPriorBalance(blockNumber: number, userId: string): Promise<BigNumber> {
     let self = this;
     return new Promise((resolve, reject) => {
@@ -891,9 +827,10 @@ export class Notifier {
   private resolveIfPossible(resolve: any, reject: any, data: any) {
     if (this.containsUndefinedValue(data)) {
       reject(`undefined value in object ${JSON.stringify(data)}`);
+      return false
     } else {
       resolve(data);
+      return true;
     }
   }
-
 }
