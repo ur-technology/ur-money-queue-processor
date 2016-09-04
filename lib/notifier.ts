@@ -313,7 +313,7 @@ export class Notifier {
         "CleansedAddress": true,
         "ConfigurationName": "Identity Verification",
         "CountryCode": "US",
-        "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicense', 'NationalIds', 'Passport'])
+        "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
       };
 
       client.post("https://api.globaldatacompany.com/verifications/v1/verify", {
