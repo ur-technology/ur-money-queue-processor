@@ -311,7 +311,7 @@ export class Notifier {
         "ConfigurationName": "Identity Verification",
         "CountryCode": taskData.Location.Country,
         "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
-      };      
+      };
       let options = {
         url: 'https://api.globaldatacompany.com/verifications/v1/verify',
         method: "POST",
@@ -324,7 +324,7 @@ export class Notifier {
       };
       var request = require('request');
 
-      request(options, (error, response, data) => {
+      request(options, (error:any, response:any, data:any) => {
         if (!error) {
           self.db.ref(`/users/${userId}`).update({
             identityVerificationResult: data.Record,
