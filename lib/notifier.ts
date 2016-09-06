@@ -304,40 +304,38 @@ export class Notifier {
         }
       }
       let userId: string = taskData._id;
-      let Client = require('node-rest-client').Client;
-      let client = new Client({ user: "URCapital_Demo_API", password: "uZNAd8EeF2rdhdoMUqx!" });
-
       let verificationArgs: any = {
         "AcceptTruliooTermsAndConditions": true,
         "Demo": true,
         "CleansedAddress": true,
         "ConfigurationName": "Identity Verification",
-        "CountryCode": "US",
+        "CountryCode": taskData.Location.Country,
         "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
-      };
-
-      client.post("https://api.globaldatacompany.com/verifications/v1/verify", {
-        data: verificationArgs,
+      };      
+      let options = {
+        url: 'https://api.globaldatacompany.com/verifications/v1/verify',
+        method: "POST",
         headers: {
-          "Content-Type": "application/json"
-        }
-      }, (data: any, response: any) => {
-        if (data && data.Record && data.Record.RecordStatus) {
+          "Content-Type": "application/json",
+          "Authorization": "Basic VVJDYXBpdGFsX0RlbW9fQVBJOnVaTkFkOEVlRjJyZGhkb01VcXgh"
+        },
+        body: verificationArgs,
+        json: true
+      };
+      var request = require('request');
+
+      request(options, (error, response, data) => {
+        if (!error) {
           self.db.ref(`/users/${userId}`).update({
             identityVerificationResult: data.Record,
             identityVerificationRequestedAt: firebase.database.ServerValue.TIMESTAMP,
             identityVerifiedAt: data.Record.RecordStatus == "match" ? firebase.database.ServerValue.TIMESTAMP : null,
           });
           self.resolveIfPossible(resolve, reject, { result: data.Record });
-        } else {
-          rejectOnce(`unexpected value for data: ${data}`)
         }
-      }).on('error', (error: string) => {
-        rejectOnce(`something went wrong on the request: ${error}`);
-      });
-
-      client.on('error', (error: string) => {
-        rejectOnce(`something went wrong on the client: ${error}`);
+        else {
+            rejectOnce(`something went wrong on the client: ${error}`);
+        }
       });
     });
   }
