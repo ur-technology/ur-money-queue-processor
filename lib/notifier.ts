@@ -91,18 +91,25 @@ export class Notifier {
         let matchingUserId = _.first(result.matchingUserIds);
         if (matchingUser) {
           log.debug(`matching user with userId ${matchingUserId} found for phone ${data.phone}`);
-          let verificationCode = self.generateVerificationCode();
-          self.sendMessage(data.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
-            if (error) {
-              log.info(`error sending message to user with userId ${matchingUserId} and phone ${data.phone}: ${error}`);
-              reject(error);
-            } else {
-              data.userId = matchingUserId;
-              data.verificationCode = verificationCode;
-              data._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
-              self.resolveIfPossible(resolve, reject, data);
-            }
-          });
+
+          if (this.checkNotSupportedCountry(data.countryCode)) {
+            data._new_state = "code_generation_canceled_because_user_from_not_supported_country";
+            self.resolveIfPossible(resolve, reject, data);
+          }
+          else {
+            let verificationCode = self.generateVerificationCode();
+            self.sendMessage(data.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
+              if (error) {
+                log.info(`error sending message to user with userId ${matchingUserId} and phone ${data.phone}: ${error}`);
+                reject(error);
+              } else {
+                data.userId = matchingUserId;
+                data.verificationCode = verificationCode;
+                data._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
+                self.resolveIfPossible(resolve, reject, data);
+              }
+            });
+          }
         } else {
           log.info(`no matching user found for ${data.phone}`);
           data._new_state = "code_generation_canceled_because_user_not_invited";
@@ -113,6 +120,12 @@ export class Notifier {
       });
     });
     self.queues.push(queue);
+  }
+
+  private checkNotSupportedCountry(countryCode: string) {
+    let listOfSupportedCountries = ["+1"];//right now only US is in the list of supported countries
+    let found = listOfSupportedCountries.indexOf(countryCode);
+    return found === -1;
   }
 
   private processPhoneAuthenticationQueueForCodeMatching() {
@@ -324,7 +337,7 @@ export class Notifier {
       };
       var request = require('request');
 
-      request(options, (error:any, response:any, data:any) => {
+      request(options, (error: any, response: any, data: any) => {
         if (!error) {
           self.db.ref(`/users/${userId}`).update({
             identityVerificationResult: data.Record,
@@ -334,7 +347,7 @@ export class Notifier {
           self.resolveIfPossible(resolve, reject, { result: data.Record });
         }
         else {
-            rejectOnce(`something went wrong on the client: ${error}`);
+          rejectOnce(`something went wrong on the client: ${error}`);
         }
       });
     });
@@ -882,7 +895,7 @@ export class Notifier {
   }
 
   private completenessRank(user: any) {
-    return (user.identityVerifiedAt ? 10000 : 0) + (user.wallet && !!user.wallet.address ? 1000 : 0) + (user.identityVerificationRequestedAt ? 100 : 0) +  (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
+    return (user.identityVerifiedAt ? 10000 : 0) + (user.wallet && !!user.wallet.address ? 1000 : 0) + (user.identityVerificationRequestedAt ? 100 : 0) + (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
   }
 
   private isCompletelySignedUp(user: any) {
