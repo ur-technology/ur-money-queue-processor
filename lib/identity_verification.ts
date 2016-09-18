@@ -53,7 +53,6 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       request(options, (error: any, response: any, data: any) => {
         if (!error) {
           let matched: boolean = data.Record.RecordStatus == "match";
-          matched = true;
           self.db.ref(`/users/${userId}`).update({
             identityVerificationResult: data.Record,
             identityVerificationRequestedAt: firebase.database.ServerValue.TIMESTAMP,
