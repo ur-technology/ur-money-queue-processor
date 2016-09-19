@@ -1,7 +1,7 @@
 build/
 /node_modules
 /typings
-npm-debug.log
+*.log
 .DS_Store
 .env
 *.js
