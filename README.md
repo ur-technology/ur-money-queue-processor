@@ -1,26 +1,26 @@
-# ur_money_notifier
+# ur-money-queue-processor
 
 ## Install global dependencies (skip if already installed)
-`npm install -g typings`
-`npm install -g node-inspector`
+`npm install -g typings node-inspector pm2`
 
 ## Install local dependencies
+* Run the following:
 ```script
-git clone git@github.com:urcapital/ur_money_notifier.git
-cd ur_money_notifer
+git clone git@github.com:urcapital/ur-money-queue-processor.git
+cd ur-money-queue-processor
 npm install
-typings install
 ```
-## Initial configuration
-* Create ssh tunnel to rpcnode: `ssh -f  -o StrictHostKeyChecking=no -N -L 9595:127.0.0.1:9595 root@45.55.7.79`
-* Create local copy of environment files: `heroku config --app ur-money-notifier-staging -s > .env`
-* Edit .env and change value of NODE_ENV to dev and FIREBASE_PROJECT_ID to your desired Firebase project
+* Next, you'll need to install and run go-ur locally, see https://github.com/urcapital/go-ur
 
-## Run Locally
-* Run this: `heroku local`
+## Initial configuration
+* Create local copy of environment file: `cp example.env .env`
+* Edit .env and change value of NODE_ENV && FIREBASE_PROJECT_ID
+
+## Run locally under pm2
+* Run this: `pm2 npm -- start`
 
 ## Debug Locally
-* Run this: `npm run-script start-node-debug`
+* Run this: `npm run-script debug`
 
 ## deploy to staging or production
-* Just merge your branch to dev or master, respectively
+* TBD
