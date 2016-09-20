@@ -16,7 +16,7 @@ export class QueueProcessor {
     this.env = env;
     let Web3 = require('web3');
     this.web3 = new Web3();
-    this.web3.setProvider(new this.web3.providers.HttpProvider("http://" + env.RPCNODE1 + ":9595"));
+    this.web3.setProvider(new this.web3.providers.HttpProvider("http://127.0.0.1:9595"));
   }
 
   constructor() {

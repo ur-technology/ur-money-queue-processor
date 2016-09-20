@@ -60,31 +60,22 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           });
           if (matched) {
             // create transaction
-            let privilegedAddress = "5d32e21bf3594aa66c205fde8dbee3dc726bd61d";
-            let to = taskData.wallet.address;
             let eth = QueueProcessor.web3.eth;
-            var rawTx: any = {
-              nonce: eth.getTransactionCount(privilegedAddress),
-              from: privilegedAddress,
-              to: to,
+            let from = "5d32e21bf3594aa66c205fde8dbee3dc726bd61d";
+            let tx: any = {
+              from: from,
+              to: taskData.wallet.address,
               value: 1,
               data: "01",
               gasPrice: eth.gasPrice.toNumber(),
               gasLimit: eth.getBlock(eth.blockNumber).gasLimit
             };
-            rawTx.gas = eth.estimateGas(rawTx)
-            let ethTx = require('ethereumjs-tx');
-            var tx = new ethTx(rawTx);
-
-            // sign key
-            let keythereum = require("keythereum");
-            let keyObject: any = keythereum.importFromFile(privilegedAddress, "ur_data");
+            tx.gas = eth.estimateGas(tx)
+            let personal = QueueProcessor.web3.personal;
             let password = "password";
-            let privateKey = keythereum.recover(password, keyObject);
-            tx.sign(privateKey);
-            var serializedTx = tx.serialize().toString('hex');
-            eth.sendRawTransaction(serializedTx, (error: string, hash: string) => {
-              console.log("result from sendRawTransaction", error, hash);
+            personal.unlockAccount(from,password,1000);
+            eth.sendTransaction(tx, (error: string, hash: string) => {
+              console.log("result from sendTransaction", error, hash);
               if (error) {
                 reject(error);
               } else {
