@@ -13,8 +13,8 @@ npm install
 * Next, you'll need to install and run go-ur locally, see https://github.com/urcapital/go-ur
 
 ## Initial configuration
-* Create local copy of environment file: `cp example.env .env`
-* Edit .env and change value of NODE_ENV && FIREBASE_PROJECT_ID
+* Create local copy of environment file: `cp staging.env .env`
+* Edit .env and change value of NODE_ENV && FIREBASE_PROJECT_ID if desired
 
 ## Run locally under pm2
 * Run this: `pm2 npm -- start`
