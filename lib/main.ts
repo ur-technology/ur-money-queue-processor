@@ -7,6 +7,7 @@ import * as firebase from 'firebase';
 import {QueueProcessor} from './queue_processor';
 import {ChatQueueProcessor} from './chat';
 import {IdentityVerificationQueueProcessor} from './identity_verification';
+import {IdentityAnnouncementQueueProcessor} from './identity_announcement';
 import {InvitationQueueProcessor} from './invitation';
 import {PhoneAuthenticationQueueProcessor} from './phone_authentication';
 import {PhoneLookupQueueProcessor} from './phone_lookup';
@@ -28,6 +29,7 @@ firebase.initializeApp({
 let queueProcessors = _.map([
   ChatQueueProcessor,
   IdentityVerificationQueueProcessor,
+  IdentityAnnouncementQueueProcessor,
   InvitationQueueProcessor,
   PhoneAuthenticationQueueProcessor,
   PhoneLookupQueueProcessor,

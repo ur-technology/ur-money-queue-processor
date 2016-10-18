@@ -29,65 +29,53 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           rejected = true;
         }
       }
-      let userId: string = taskData._id;
-      let verificationArgs: any = {
-        "AcceptTruliooTermsAndConditions": true,
-        "Demo": true,
-        "CleansedAddress": true,
-        "ConfigurationName": "Identity Verification",
-        "CountryCode": taskData.Location.Country,
-        "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
-      };
-      let options = {
-        url: 'https://api.globaldatacompany.com/verifications/v1/verify',
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Basic VVJDYXBpdGFsX0RlbW9fQVBJOnVaTkFkOEVlRjJyZGhkb01VcXgh"
-        },
-        body: verificationArgs,
-        json: true
-      };
-      var request = require('request');
-
-      request(options, (error: any, response: any, data: any) => {
-        if (!error) {
-          let matched: boolean = data.Record.RecordStatus == "match";
-          self.db.ref(`/users/${userId}`).update({
-            identityVerificationResult: data.Record,
-            identityVerificationRequestedAt: firebase.database.ServerValue.TIMESTAMP,
-            identityVerifiedAt: matched ? firebase.database.ServerValue.TIMESTAMP : null,
-          });
-          if (matched) {
-            // create transaction
-            let eth = QueueProcessor.web3.eth;
-            let from = "5d32e21bf3594aa66c205fde8dbee3dc726bd61d";
-            let tx: any = {
-              from: from,
-              to: taskData.wallet.address,
-              value: 1,
-              data: "01",
-              gasPrice: eth.gasPrice.toNumber(),
-              gasLimit: eth.getBlock(eth.blockNumber).gasLimit
-            };
-            tx.gas = eth.estimateGas(tx)
-            let personal = QueueProcessor.web3.personal;
-            let password = "password";
-            personal.unlockAccount(from,password,1000);
-            eth.sendTransaction(tx, (error: string, hash: string) => {
-              console.log("result from sendTransaction", error, hash);
-              if (error) {
-                reject(error);
-              } else {
-                self.resolveIfPossible(resolve, reject, { result: data.Record });
-              }
-            });
-          } else {
-            self.resolveIfPossible(resolve, reject, { result: data.Record });
-          }
-        } else {
-          rejectOnce(`something went wrong on the client: ${error}`);
+      let userId: string = taskData.userId;
+      self.lookupUserById(userId).then((user: any) => {
+        let status = _.trim((user.registration && user.registration.status) || "");
+        if (status && status != "initial") {
+          rejectOnce(`unexpected status ${user.registration.status}`);
+          return;
         }
+
+        let verificationArgs: any = {
+          "AcceptTruliooTermsAndConditions": true,
+          "Demo": false,
+          "CleansedAddress": true,
+          "ConfigurationName": "Identity Verification",
+          "CountryCode": taskData.Location.Country,
+          "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
+        };
+        let options = {
+          url: 'https://api.globaldatacompany.com/verifications/v1/verify',
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Basic VVJDYXBpdGFsX0FQSTpOVmhLdDNAVUtZVHJBVlIzWHlR"
+          },
+          body: verificationArgs,
+          json: true
+        };
+        let registrationRef = self.db.ref(`/users/${userId}/registration`);
+        registrationRef.update({
+          status: "verification-requested",
+          verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
+        });
+        var request = require('request');
+        request(options, (error: any, response: any, data: any) => {
+          if (error) {
+            rejectOnce(`something went wrong on the client: ${error}`);
+            return;
+          }
+          let verified: boolean = !!data.Record && data.Record.RecordStatus == "match";
+          registrationRef.update({
+            status: verified ? "verification-succeeded": "verification-pending",
+            verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
+            verificationResult: data.Record
+          });
+          self.resolveIfPossible(resolve, reject, {result: {verified: verified}});
+        });
+      }, (error: any) => {
+        rejectOnce(`could not find user with id ${userId}: ${error}`);
       });
     });
     return [queue];

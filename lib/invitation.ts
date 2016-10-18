@@ -58,21 +58,4 @@ export class InvitationQueueProcessor extends QueueProcessor {
     return [queue];
   }
 
-  private lookupUserById(userId: string): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      let userRef = self.db.ref(`/users/${userId}`);
-      userRef.once('value', (snapshot: firebase.database.DataSnapshot) => {
-        let user = snapshot.val();
-        if (user) {
-          resolve(user);
-        } else {
-          let error = `no user exists at location ${userRef.toString()}`
-          log.warn(error);
-          reject(error);
-        }
-      });
-    });
-  }
-
 }

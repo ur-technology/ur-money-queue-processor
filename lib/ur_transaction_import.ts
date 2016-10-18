@@ -136,6 +136,21 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
+  private getAssociatedAddresses(urTransactions: any[]): string[] {
+    let addresses: string[] = [];
+    _.each(urTransactions, (urTransaction) => {
+      addresses.push(urTransaction.from);
+      // if (self.isPrivilegedTransaction(urTransaction)) {
+      //   let balanceChanges = self.getBalanceChangesFromSignupTransaction(urTransaction.transaction.hash);
+      //   addresses.concat(_.keys(balanceChanges));
+      // } else {
+      //   addresses.push(urTransaction.transaction.to);
+      // }
+      addresses.push(urTransaction.to);
+    });
+    return _.uniq(addresses) as string[];
+  }
+
   private importTransactions(blockNumber: number): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
@@ -154,9 +169,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           return;
         }
 
-        let uniqueAddresses = _.uniq(_.map(urTransactions, 'from').concat(_.map(urTransactions, 'to'))) as string[];
+        let associatedAddresses: string[] = self.getAssociatedAddresses(urTransactions);
         let transactions: any[];
-        self.lookupUsersByAddresses(uniqueAddresses).then((addressToUserMapping) => {
+        self.lookupUsersByAddresses(associatedAddresses).then((addressToUserMapping) => {
           self.buildTransactions(urTransactions, block.timestamp, addressToUserMapping).then((transactions) => {
             self.addTransactionsToRoot(blockNumber, transactions).then(() => {
 
@@ -211,7 +226,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
     if (this.isPrivilegedTransaction(transaction)) {
       transaction.type = "earned";
-      transaction.amount = new BigNumber(transaction.urTransaction.value).times(1000000000000000).toPrecision();
+      transaction.amount = new BigNumber(2000).times(1000000000000000000).toPrecision();
     } else {
       transaction.amount = transaction.urTransaction.value;
     }
@@ -220,13 +235,13 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
   private isPrivilegedTransaction(transaction: any): boolean {
     let privilegedAddresses = [
-      "0x5d32e21bf3594aa66c205fde8dbee3dc726bd61d",
-      "0x9194d1fa799d9feb9755aadc2aa28ba7904b0efd",
-      "0xab4b7eeb95b56bae3b2630525b4d9165f0cab172",
-      "0xea82e994a02fb137ffaca8051b24f8629b478423",
-      "0xb1626c3fc1662410d85d83553d395cabba148be1",
-      "0x65afd2c418a1005f678f9681f50595071e936d7c",
-      "0x49158a28df943acd20be7c8e758d8f4a9dc07d05"
+      "0x482cf297b08d4523c97ec3a54e80d2d07acd76fa",
+      "0xcc74e28cec33a784c5cd40e14836dd212a937045",
+      "0xc07a55758f896449805bae3851f57e25bb7ee7ef",
+      "0x48a24dd26a32564e2697f25fc8605700ec4c0337",
+      "0x3cac5f7909f9cb666cc4d7ef32047b170e454b16",
+      "0x0827d93936df936134dd7b7acaeaea04344b11f2",
+      "0xa63e936e0eb36c103f665d53bd7ca9c31ec7e1ad"
     ];
     return _.includes(privilegedAddresses, transaction.urTransaction.from);
   }
