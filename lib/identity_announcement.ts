@@ -10,7 +10,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
         "in_progress_state": "processing",
         "error_state": "error",
         "timeout": 120000,
-        "retries": 5
+        "retries": 10
       })
     ];
   }
@@ -31,26 +31,37 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       let userId: string = taskData.userId;
       self.lookupUserById(userId).then((user: any) => {
         let status = _.trim((user.registration && user.registration.status) || "");
-        if (status != "verification-succeeded") {
+        if (status != "verification-succeeded" && status != "announcement-requested") {
           rejectOnce(`unexpected status ${user.registration.status}`);
           return;
         }
-        if (!user.wallet || !user.wallet.address) {
-          rejectOnce(`no wallet address set`);
-          return;
-        }
-
         let registrationRef = self.db.ref(`/users/${userId}/registration`);
         registrationRef.update({
           status: "announcement-requested",
           announcementRequestedAt: firebase.database.ServerValue.TIMESTAMP
         });
 
-        let txResult = self.buildTransaction(user.wallet.address);
-        if (txResult.error) {
-          rejectOnce(txResult.error);
+        if (!user.wallet || !user.wallet.address) {
+          rejectOnce(`no wallet address set`);
           return;
         }
+        let eth = QueueProcessor.web3.eth;
+        if (!eth.gasPrice) {
+          rejectOnce(`eth.gasPrice not set`);
+          return;
+        }
+        if (!eth.blockNumber) {
+          rejectOnce(`eth.blockNumber not set`);
+          return;
+        }
+        let block = eth.getBlock(eth.blockNumber);
+        let gasLimit = block && block.gasLimit;
+        if (!gasLimit) {
+          rejectOnce(`could not get gas limit`);
+          return;
+        }
+
+        let tx = self.buildTransaction(user.wallet.address, gasLimit);
 
         let web3 = QueueProcessor.web3;
         web3.personal.unlockAccount(
@@ -58,7 +69,9 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD,
           1000
         );
-        web3.eth.sendTransaction(txResult.tx, (error: string, hash: string) => {
+
+        registrationRef.update({ status: "announcement-started" });
+        web3.eth.sendTransaction(tx, (error: string, hash: string) => {
           registrationRef.update({
             status: error ? "announcement-failed" : "announcement-succeeded",
             announcementFinalizedAt: firebase.database.ServerValue.TIMESTAMP
@@ -78,23 +91,8 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     return [queue];
   }
 
-  private buildTransaction(to: string): any {
+  private buildTransaction(to: string, gasLimit: number): any {
     let eth = QueueProcessor.web3.eth;
-
-    if (!eth.gasPrice) {
-      return { error: "eth.gasPrice not set" }
-    }
-
-    if (!eth.blockNumber) {
-      return { error: "eth.blockNumber not set" }
-    }
-
-    let block = eth.getBlock(eth.blockNumber);
-    let gasLimit = block && block.gasLimit;
-    if (!gasLimit) {
-      return { error: "could not get gas limit" }
-    }
-
     let tx: any = {
       from: QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS,
       to: to,
@@ -103,8 +101,8 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       gasPrice: eth.gasPrice.toNumber(),
       gasLimit: gasLimit
     };
-    tx.gas = eth.estimateGas(tx)
-    return { error: null, tx: tx };
+    tx.gas = eth.estimateGas(tx);
+    return tx;
   }
 
 }
