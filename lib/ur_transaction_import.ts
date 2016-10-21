@@ -178,6 +178,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
               let users = _.values(addressToUserMapping);
               let userIds = _.uniq(_.map(users, 'userId')) as string[];
               let userIdsRemaining = userIds.length;
+              if (userIdsRemaining == 0) {
+                resolve();
+                return;
+              }
+
               let finalized = false;
               _.each(userIds, (userId) => {
                 let associatedTransactions = _.filter(transactions, (t: any) => {
