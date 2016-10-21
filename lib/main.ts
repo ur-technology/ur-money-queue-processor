@@ -38,7 +38,7 @@ let queueProcessors = _.map([
   return new queueProcessorClass();
 });
 
-QueueProcessor.initializeClass(process.env);
+QueueProcessor.env = process.env;
 
 let initializerPromises = _.flatten(_.map(queueProcessors, (p) => { return p.disabled() ? [] : p.init(); }));
 

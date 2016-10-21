@@ -45,7 +45,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           rejectOnce(`no wallet address set`);
           return;
         }
-        let eth = QueueProcessor.web3.eth;
+        let eth = QueueProcessor.web3().eth;
         if (!eth.gasPrice) {
           rejectOnce(`eth.gasPrice not set`);
           return;
@@ -63,15 +63,14 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
 
         let tx = self.buildTransaction(user.wallet.address, gasLimit);
 
-        let web3 = QueueProcessor.web3;
-        web3.personal.unlockAccount(
+        QueueProcessor.web3().personal.unlockAccount(
           QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS,
           QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD,
           1000
         );
 
         registrationRef.update({ status: "announcement-started" });
-        web3.eth.sendTransaction(tx, (error: string, hash: string) => {
+        QueueProcessor.web3().eth.sendTransaction(tx, (error: string, hash: string) => {
           registrationRef.update({
             status: error ? "announcement-failed" : "announcement-succeeded",
             announcementFinalizedAt: firebase.database.ServerValue.TIMESTAMP
@@ -92,7 +91,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
   }
 
   private buildTransaction(to: string, gasLimit: number): any {
-    let eth = QueueProcessor.web3.eth;
+    let eth = QueueProcessor.web3().eth;
     let tx: any = {
       from: QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS,
       to: to,

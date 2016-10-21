@@ -10,13 +10,15 @@ export class QueueProcessor {
   Queue: any;
   _disabled: boolean;
   static env: any;
-  static web3: any;
+  static _web3: any;
 
-  static initializeClass(env: any) {
-    this.env = env;
-    let Web3 = require('web3');
-    this.web3 = new Web3();
-    this.web3.setProvider(new this.web3.providers.HttpProvider("http://127.0.0.1:9595"));
+  static web3() {
+    if (!this._web3) {
+      let Web3 = require('web3');
+      this._web3 = new Web3();
+      this._web3.setProvider(new this._web3.providers.HttpProvider("http://127.0.0.1:9595"));
+    }
+    return this._web3;
   }
 
   constructor() {

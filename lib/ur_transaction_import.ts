@@ -41,8 +41,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let import_options = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
     let import_queue = new self.Queue(queueRef, import_options, (data: any, progress: any, resolve: any, reject: any) => {
       let blockNumber: number = parseInt(data._id);
-
-      let lastMinedBlockNumber = QueueProcessor.web3.eth.blockNumber;
+      let lastMinedBlockNumber = QueueProcessor.web3().eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
         resolve({ _new_state: "ready_to_wait" });
@@ -155,7 +154,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let self = this;
     return new Promise((resolve, reject) => {
 
-      QueueProcessor.web3.eth.getBlock(blockNumber, true, function(error: string, block: any) {
+      QueueProcessor.web3().eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
           error = `Could not retrieve transactions for blockNumber ${blockNumber}: ${error};`
           log.warn(error);
