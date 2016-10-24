@@ -35,7 +35,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       self.startTask(waitQueue, task);
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
-        self.logAndResolveIfPossible(waitQueue, _.merge({task,  _new_state: "ready_to_import" }), resolve, reject);
+        self.logAndResolveIfPossible(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
       }, 15 * 1000);
     });
 
@@ -46,7 +46,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let lastMinedBlockNumber = QueueProcessor.web3().eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
-        self.logAndResolveIfPossible(importQueue, _.merge({task,  _new_state: "ready_to_wait" }), resolve, reject);
+        self.logAndResolveIfPossible(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
         return;
       }
 
@@ -121,22 +121,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
             transaction.type = transaction.sender.userId == userId ? "sent" : "received";
           }
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
-            let event: any = {
-              createdAt: firebase.database.ServerValue.TIMESTAMP,
-              updatedAt: firebase.database.ServerValue.TIMESTAMP,
-              title: 'Transaction',
-              messageText: transaction.type,
-              notificationProcessed: false,
-              sourceId: transaction.urTransaction.hash,
-              sourceType: 'transaction'
-            };
-
-            if (transaction.sender.userId == userId && transaction.receiver.profilePhotoUrl) {
-              event.profilePhotoUrl = transaction.receiver.profilePhotoUrl;
-            } else if (transaction.receiver.userId == userId && transaction.sender.profilePhotoUrl) {
-              event.profilePhotoUrl = transaction.sender.profilePhotoUrl;
-            }
-            self.db.ref(`/users/${userId}/events/${transaction.urTransaction.hash}`).set(event).then(() => {
+            self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction)).then(() => {
               transactionsRemaining--;
               if (!finalized && transactionsRemaining == 0) {
                 resolve();
@@ -155,6 +140,38 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         reject(error);
       });
     });
+  }
+
+  formatUR(amount: number): string {
+    return (new BigNumber(amount || 0)).toFormat(2);
+  }
+
+  generateEvent(transaction: any): any {
+    let urAmount = this.formatUR(QueueProcessor.web3().fromWei(parseFloat(transaction.amount)));
+    let event: any = {
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      notificationProcessed: false,
+      sourceId: transaction.urTransaction.hash,
+      sourceType: 'transaction'
+    };
+    switch (transaction.type) {
+      case "earned":
+        event.title = "Bonus Received";
+        event.messageText = `You earned a bonus of ${ urAmount } UR because of a sign up`;
+        event.profilePhotoUrl = transaction.receiver.profilePhotoUrl; // TODO: make this match the photo of the person who signed up
+        break;
+      case "sent":
+        event.title = "UR Sent";
+        event.messageText = `You sent ${ urAmount } UR to ${ transaction.receiver.name }`;
+        event.profilePhotoUrl = transaction.receiver.profilePhotoUrl;
+        break;
+      case "received":
+        event.title = "UR Received";
+        event.messageText = `You received ${ urAmount } UR from ${ transaction.send.name }`;
+        event.profilePhotoUrl = transaction.sender.profilePhotoUrl;
+    }
+    return _.omitBy(event, _.isNil);
   }
 
   private getAssociatedAddresses(urTransactions: any[]): string[] {
