@@ -19,7 +19,8 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/identityAnnouncementQueue");
     let options = { 'specId': 'announce_identity', 'numWorkers': 1, 'sanitize': false };
-    let queue = new self.Queue(queueRef, options, (taskData: any, progress: any, resolve: any, reject: any) => {
+    let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(queue, task);
       let rejected = false;
       function rejectOnce(message: string) {
         log.error(message);
@@ -28,7 +29,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           rejected = true;
         }
       }
-      let userId: string = taskData.userId;
+      let userId: string = task.userId;
       self.lookupUserById(userId).then((user: any) => {
         let status = _.trim((user.registration && user.registration.status) || "");
         if (status != "verification-succeeded" && status != "announcement-requested") {
@@ -80,7 +81,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
             reject(error);
           } else {
             console.log(`successfully sent announcement transaction ${hash} for user ${userId}`);
-            self.resolveIfPossible(resolve, reject, taskData);
+            self.logAndResolveIfPossible(queue, task, resolve, reject);
           }
         });
       }, (error) => {

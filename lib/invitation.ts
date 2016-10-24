@@ -11,25 +11,26 @@ export class InvitationQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/invitationQueue");
     let options = { 'numWorkers': 1 };
-    let queue = new self.Queue(queueRef, options, (data: any, progress: any, resolve: any, reject: any) => {
+    let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(queue, task);
       try { // TODO: remove this try
-        self.lookupUsersByPhone(data.invitee.phone).then((result) => {
+        self.lookupUsersByPhone(task.invitee.phone).then((result) => {
           let matchingUser: any = _.first(result.matchingUsers);
           if (matchingUser && matchingUser.identityVerificationRequestedAt) {
             reject(`Sorry, ${matchingUser.name} has already signed up with UR Money.`);
             return;
           }
 
-          self.lookupUserById(data.sponsorUserId).then((sponsor: any) => {
+          self.lookupUserById(task.sponsorUserId).then((sponsor: any) => {
             // add new user to users list
             let newUser: any = {
               createdAt: firebase.database.ServerValue.TIMESTAMP,
-              firstName: data.invitee.firstName,
-              middleName: data.invitee.middleName,
-              lastName: data.invitee.lastName,
-              phone: data.invitee.phone,
+              firstName: task.invitee.firstName,
+              middleName: task.invitee.middleName,
+              lastName: task.invitee.lastName,
+              phone: task.invitee.phone,
               sponsor: {
-                userId: data.sponsorUserId,
+                userId: task.sponsorUserId,
                 name: sponsor.name,
                 profilePhotoUrl: sponsor.profilePhotoUrl
               },
@@ -41,10 +42,10 @@ export class InvitationQueueProcessor extends QueueProcessor {
 
             // add new user to sponsor's downline users
             let newUserId = newUserRef.key;
-            let sponsorRef = self.db.ref(`/users/${data.sponsorUserId}`);
+            let sponsorRef = self.db.ref(`/users/${task.sponsorUserId}`);
             sponsorRef.child(`downlineUsers/${newUserId}`).set({ name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl });
-            log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${data.sponsorUserId}`);
-            self.resolveIfPossible(resolve, reject, data);
+            log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${task.sponsorUserId}`);
+            self.logAndResolveIfPossible(queue, task, resolve, reject);
           });
         }, (error) => {
           reject(error);

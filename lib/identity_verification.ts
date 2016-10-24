@@ -20,7 +20,8 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/identityVerificationQueue");
     let options = { 'specId': 'verify_identity', 'numWorkers': 1, 'sanitize': false };
-    let queue = new self.Queue(queueRef, options, (taskData: any, progress: any, resolve: any, reject: any) => {
+    let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(queue, task);
       let rejected = false;
       function rejectOnce(message: string) {
         log.error(message);
@@ -29,7 +30,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           rejected = true;
         }
       }
-      let userId: string = taskData.userId;
+      let userId: string = task.userId;
       self.lookupUserById(userId).then((user: any) => {
         let status = _.trim((user.registration && user.registration.status) || "");
         if (status && status != "initial") {
@@ -37,14 +38,6 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           return;
         }
 
-        let verificationArgs: any = {
-          "AcceptTruliooTermsAndConditions": true,
-          "Demo": false,
-          "CleansedAddress": true,
-          "ConfigurationName": "Identity Verification",
-          "CountryCode": taskData.Location.Country,
-          "DataFields": _.pick(taskData, ['PersonInfo', 'Location', 'Communication', 'DriverLicence', 'NationalIds', 'Passport'])
-        };
         let options = {
           url: 'https://api.globaldatacompany.com/verifications/v1/verify',
           method: "POST",
@@ -52,7 +45,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
             "Content-Type": "application/json",
             "Authorization": "Basic VVJDYXBpdGFsX0FQSTpOVmhLdDNAVUtZVHJBVlIzWHlR"
           },
-          body: verificationArgs,
+          body: task.verificationArgs,
           json: true
         };
         let registrationRef = self.db.ref(`/users/${userId}/registration`);
@@ -61,18 +54,19 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
         });
         var request = require('request');
-        request(options, (error: any, response: any, data: any) => {
+        request(options, (error: any, response: any, verificationData: any) => {
           if (error) {
             rejectOnce(`something went wrong on the client: ${error}`);
             return;
           }
-          let verified: boolean = !!data.Record && data.Record.RecordStatus == "match";
+          let verified: boolean = !!verificationData.Record && verificationData.Record.RecordStatus == "match";
           registrationRef.update({
             status: verified ? "verification-succeeded": "verification-pending",
             verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
-            verificationResult: data.Record
+            verificationArgs: task.verificationArgs,
+            verificationResult: verificationData.Record
           });
-          self.resolveIfPossible(resolve, reject, {result: {verified: verified}});
+          self.logAndResolveIfPossible(queue, _.merge(task, {result: {verified: verified}}), resolve, reject);
         });
       }, (error: any) => {
         rejectOnce(`could not find user with id ${userId}: ${error}`);

@@ -82,12 +82,22 @@ export class QueueProcessor {
     return `${user.firstName || ""} ${user.middleName || ""} ${user.lastName || ""}`.trim().replace(/  /, " ");
   }
 
-  resolveIfPossible(resolve: any, reject: any, data: any) {
-    if (this.containsUndefinedValue(data)) {
-      reject(`undefined value in object ${JSON.stringify(data)}`);
+  logAndReject(queue: any, task: any, error: any, reject: any) {
+    log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - rejected - error: ${error}`);
+    reject(error);
+  }
+
+  startTask(queue: any, task: any) {
+    log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - started`);
+  }
+
+  logAndResolveIfPossible(queue: any, task: any, resolve: any, reject: any) {
+    if (this.containsUndefinedValue(task)) {
+      this.logAndReject(queue, task, `undefined value in object ${JSON.stringify(task)}`, reject);
       return false
     } else {
-      resolve(data);
+      log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - resolved`);
+      resolve(task);
       return true;
     }
   }

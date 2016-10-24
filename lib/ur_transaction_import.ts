@@ -30,37 +30,39 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/urTransactionImportQueue");
 
-    let wait_options = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
-    let wait_queue = new self.Queue(queueRef, wait_options, (data: any, progress: any, resolve: any, reject: any) => {
-      let blockNumber: number = parseInt(data._id);
+    let waitOptions = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
+    let waitQueue = new self.Queue(queueRef, waitOptions, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(waitQueue, task);
+      let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
-        resolve({ _new_state: "ready_to_import" });
+        self.logAndResolveIfPossible(waitQueue, _.merge({task,  _new_state: "ready_to_import" }), resolve, reject);
       }, 15 * 1000);
     });
 
-    let import_options = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
-    let import_queue = new self.Queue(queueRef, import_options, (data: any, progress: any, resolve: any, reject: any) => {
-      let blockNumber: number = parseInt(data._id);
+    let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
+    let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(importQueue, task);
+      let blockNumber: number = parseInt(task._id);
       let lastMinedBlockNumber = QueueProcessor.web3().eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
-        resolve({ _new_state: "ready_to_wait" });
+        self.logAndResolveIfPossible(importQueue, _.merge({task,  _new_state: "ready_to_wait" }), resolve, reject);
         return;
       }
 
       self.importTransactions(blockNumber).then(() => {
         // queue another task to import the next block
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-          self.resolveIfPossible(resolve, reject, data);
+          self.logAndResolveIfPossible(importQueue, task, resolve, reject);
         }, (error: string) => {
           log.warn(`unable to add task for next block to queue: ${error}`)
-          self.resolveIfPossible(resolve, reject, data);
+          self.logAndResolveIfPossible(importQueue, task, resolve, reject);
         });
       }, (error) => {
         reject(error);
       });
     });
-    return [wait_queue, import_queue];
+    return [waitQueue, importQueue];
   };
 
   private setUpUrTransactionImportQueue(): Promise<any> {
@@ -119,11 +121,31 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
             transaction.type = transaction.sender.userId == userId ? "sent" : "received";
           }
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
-            transactionsRemaining--;
-            if (!finalized && transactionsRemaining == 0) {
-              resolve();
-              finalized = true;
+            let event: any = {
+              createdAt: firebase.database.ServerValue.TIMESTAMP,
+              updatedAt: firebase.database.ServerValue.TIMESTAMP,
+              title: 'Transaction',
+              messageText: transaction.type,
+              notificationProcessed: false,
+              sourceId: transaction.urTransaction.hash,
+              sourceType: 'transaction'
+            };
+
+            if (transaction.sender.userId == userId && transaction.receiver.profilePhotoUrl) {
+              event.profilePhotoUrl = transaction.receiver.profilePhotoUrl;
+            } else if (transaction.receiver.userId == userId && transaction.sender.profilePhotoUrl) {
+              event.profilePhotoUrl = transaction.sender.profilePhotoUrl;
             }
+            self.db.ref(`/users/${userId}/events/${transaction.urTransaction.hash}`).set(event).then(() => {
+              transactionsRemaining--;
+              if (!finalized && transactionsRemaining == 0) {
+                resolve();
+                finalized = true;
+              }
+            }, (error: string) => {
+              reject(error);
+              finalized = true;
+            });
           }, (error: string) => {
             reject(error);
             finalized = true;
@@ -219,7 +241,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       createdAt: firebase.database.ServerValue.TIMESTAMP,
       sender: _.pick(fromUser, ['name', 'profilePhotoUrl', 'userId']),
       receiver: _.pick(toUser, ['name', 'profilePhotoUrl', 'userId']),
-      source: "external"
+      source: "unknown" // one of app/earned/unknown
     };
     _.merge(transaction, existingTransaction);
     _.merge(transaction, {
@@ -229,6 +251,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() })
     });
     if (this.isPrivilegedTransaction(transaction)) {
+      transaction.source = "earned";
       transaction.type = "earned";
       transaction.amount = new BigNumber(2000).times(1000000000000000000).toPrecision();
     } else {

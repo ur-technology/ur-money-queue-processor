@@ -27,55 +27,56 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
   process(): any[] {
     let self = this;
     let queueRef = self.db.ref("/phoneAuthenticationQueue");
-
     let codeGenerationOptions = { 'specId': 'code_generation', 'numWorkers': 1, sanitize: false };
-    let codeGenerationQueue = new self.Queue(queueRef, codeGenerationOptions, (data: any, progress: any, resolve: any, reject: any) => {
-      self.lookupUsersByPhone(data.phone).then((result) => {
+    let codeGenerationQueue = new self.Queue(queueRef, codeGenerationOptions, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(codeGenerationQueue, task);
+      self.lookupUsersByPhone(task.phone).then((result) => {
         // TODO: handle case where there are multiple invitations
         let matchingUser = _.first(result.matchingUsers);
         let matchingUserId = _.first(result.matchingUserIds);
         if (!matchingUser) {
-          log.info(`no matching user found for ${data.phone}`);
-          data._new_state = "code_generation_canceled_because_user_not_invited";
-          self.resolveIfPossible(resolve, reject, data);
+          log.info(`no matching user found for ${task.phone}`);
+          task._new_state = "code_generation_canceled_because_user_not_invited";
+          self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
-        log.debug(`matching user with userId ${matchingUserId} found for phone ${data.phone}`);
+        log.debug(`matching user with userId ${matchingUserId} found for phone ${task.phone}`);
 
-        if (!this.isCountrySupported(data.countryCode)) {
-          data._new_state = "code_generation_canceled_because_user_from_not_supported_country";
-          self.resolveIfPossible(resolve, reject, data);
+        if (!this.isCountrySupported(task.countryCode)) {
+          task._new_state = "code_generation_canceled_because_user_from_not_supported_country";
+          self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
         let verificationCode = self.generateVerificationCode();
-        self.sendMessage(data.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
+        self.sendMessage(task.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
           if (error) {
-            log.info(`error sending message to user with userId ${matchingUserId} and phone ${data.phone}: ${error}`);
-            reject(error);
+            log.info(`error sending message to user with userId ${matchingUserId} and phone ${task.phone}: ${error}`);
+            self.logAndReject(codeGenerationQueue, task, error, reject);
           } else {
-            data.userId = matchingUserId;
-            data.verificationCode = verificationCode;
-            data._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
-            self.resolveIfPossible(resolve, reject, data);
+            task.userId = matchingUserId;
+            task.verificationCode = verificationCode;
+            task._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
+            self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           }
         });
       }, (error) => {
-        reject(error);
+        self.logAndReject(codeGenerationQueue, task, error, reject);
       });
     });
 
     let codeMatchingOptions = { 'specId': 'code_matching', 'numWorkers': 1 };
-    let codeMatchingQueue = new self.Queue(queueRef, codeMatchingOptions, (data: any, progress: any, resolve: any, reject: any) => {
-      if (data.submittedVerificationCode == data.verificationCode) {
-        log.debug(`submittedVerificationCode ${data.submittedVerificationCode} matches actual verificationCode; sending authToken to user`);
-        data.verificationResult = { codeMatch: true, authToken: firebase.auth().createCustomToken(data.userId, { some: "arbitrary", data: "here" }) };
+    let codeMatchingQueue = new self.Queue(queueRef, codeMatchingOptions, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(codeMatchingQueue, task);
+      if (task.submittedVerificationCode == task.verificationCode) {
+        log.debug(`submittedVerificationCode ${task.submittedVerificationCode} matches actual verificationCode; sending authToken to user`);
+        task.verificationResult = { codeMatch: true, authToken: firebase.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" }) };
       } else {
-        log.debug(`submittedVerificationCode ${data.submittedVerificationCode} does not match actual verificationCode ${data.verificationCode}`);
-        data.verificationResult = { codeMatch: false };
+        log.debug(`submittedVerificationCode ${task.submittedVerificationCode} does not match actual verificationCode ${task.verificationCode}`);
+        task.verificationResult = { codeMatch: false };
       }
-      self.resolveIfPossible(resolve, reject, data);
+      self.logAndResolveIfPossible(codeMatchingQueue, task, resolve, reject);
     });
 
     return [codeGenerationQueue, codeMatchingQueue];
