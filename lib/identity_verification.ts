@@ -63,6 +63,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           registrationRef.update({
             status: verified ? "verification-succeeded": "verification-pending",
             verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
+            verified: verified,
             verificationArgs: task.verificationArgs,
             verificationResult: verificationData.Record
           });

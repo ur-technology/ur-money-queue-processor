@@ -113,7 +113,7 @@ export class QueueProcessor {
       }
 
       let text: string;
-      if (user.identityVerifiedAt) {
+      if (user.registration && user.registration.verified) {
         text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
       } else {
         text = "This is a reminder that " + self.fullName(user.sponsor) + " has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
@@ -121,7 +121,7 @@ export class QueueProcessor {
       text = text + " put url here";
       userSnapshot.ref.child("smsMessages").push({
         name: messageName,
-        type: user.identityVerifiedAt ? "signUp" : "invitation",
+        type: user.registration && user.registration.verified ? "signUp" : "invitation",
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         sendAttempted: false,
         phone: user.phone,
@@ -203,7 +203,7 @@ export class QueueProcessor {
   }
 
   private completenessRank(user: any) {
-    return (user.identityVerifiedAt ? 10000 : 0) + (user.wallet && !!user.wallet.address ? 1000 : 0) + (user.identityVerificationRequestedAt ? 100 : 0) +  (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
+    return (user.registration && user.registration.verified ? 10000 : 0) + (user.wallet && !!user.wallet.address ? 1000 : 0) + (user.identityVerificationRequestedAt ? 100 : 0) +  (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
   }
 
   private containsUndefinedValue(objectOrArray: any): boolean {
