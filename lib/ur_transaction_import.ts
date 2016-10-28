@@ -108,6 +108,18 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
+  private transactionType(transaction: any, userId: string) {
+    if (this.isSignUpBonus(transaction.urTransaction)) {
+      return "earned";
+    } else if (transaction.sender.userId == userId) {
+      return "sent";
+    } else if (transaction.receiver.userId == userId) {
+      return "received";
+    } else {
+      return "unknown";
+    }
+  }
+
   private addTransactionsToUser(blockNumber: number, transactions: any[], userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
@@ -118,9 +130,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         _.each(transactions, (transaction: any) => {
           balance = balance.plus(new BigNumber(transaction.amount));
           transaction.balance = balance.toPrecision();
-          if (transaction.type != "earned") {
-            transaction.type = transaction.sender.userId == userId ? "sent" : "received";
-          }
+          transaction.type = self.transactionType(transaction, userId);
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
             self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction)).then(() => {
               transactionsRemaining--;
@@ -252,34 +262,37 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
+
+  private sender(urTransaction: any, addressToUserMapping: any): any {
+    let user: any = this.isSignUpBonus(urTransaction) ? { name: "UR Network" } : ( addressToUserMapping[urTransaction.from] || { name: "Unknown User" } );
+    return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
+  }
+
+  private receiver(urTransaction: any, addressToUserMapping: any): any {
+    let user: any = addressToUserMapping[urTransaction.to] || { name: "Unknown User" };
+    return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
+  }
+
   private buildTransaction(urTransaction: any, blockTimestamp: number, addressToUserMapping: any, existingTransaction: any): any {
-    let fromUser: any = addressToUserMapping[urTransaction.from] || { name: "Unknown User" };
-    let toUser: any = addressToUserMapping[urTransaction.to] || { name: "Unknown User" };
     let transaction: any = {
       createdAt: firebase.database.ServerValue.TIMESTAMP,
-      sender: _.pick(fromUser, ['name', 'profilePhotoUrl', 'userId']),
-      receiver: _.pick(toUser, ['name', 'profilePhotoUrl', 'userId']),
-      source: "unknown" // one of app/earned/unknown
+      sender: this.sender(urTransaction, addressToUserMapping),
+      receiver: this.receiver(urTransaction, addressToUserMapping),
+      createdBy: this.isSignUpBonus(urTransaction) ? "UR Network" : "Unknown"
     };
     _.merge(transaction, existingTransaction);
     _.merge(transaction, {
       updatedAt: firebase.database.ServerValue.TIMESTAMP,
       minedAt: blockTimestamp * 1000,
       sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-      urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() })
+      urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
+      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : transaction.urTransaction.value
     });
-    if (this.isPrivilegedTransaction(transaction)) {
-      transaction.source = "earned";
-      transaction.type = "earned";
-      transaction.amount = new BigNumber(2000).times(1000000000000000000).toPrecision();
-    } else {
-      transaction.amount = transaction.urTransaction.value;
-    }
     return transaction;
   }
 
-  private isPrivilegedTransaction(transaction: any): boolean {
-    let privilegedAddresses = [
+  private isSignUpBonus(urTransaction: any): boolean {
+    return _.includes([
       "0x482cf297b08d4523c97ec3a54e80d2d07acd76fa",
       "0xcc74e28cec33a784c5cd40e14836dd212a937045",
       "0xc07a55758f896449805bae3851f57e25bb7ee7ef",
@@ -287,8 +300,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       "0x3cac5f7909f9cb666cc4d7ef32047b170e454b16",
       "0x0827d93936df936134dd7b7acaeaea04344b11f2",
       "0xa63e936e0eb36c103f665d53bd7ca9c31ec7e1ad"
-    ];
-    return _.includes(privilegedAddresses, transaction.urTransaction.from);
+    ], urTransaction.from);
   }
 
   private buildTransactions(urTransactions: any[], blockTimestamp: number, addressToUserMapping: any): Promise<any> {
