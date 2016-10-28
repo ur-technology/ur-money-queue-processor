@@ -286,7 +286,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       minedAt: blockTimestamp * 1000,
       sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
       urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : transaction.urTransaction.value
+      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
     });
     return transaction;
   }

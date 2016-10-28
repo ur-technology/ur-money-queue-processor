@@ -1,10 +1,10 @@
 {
-  "name": "ur_money_notifier",
-  "version": "0.0.2",
+  "name": "ur-money-queue-processor",
+  "version": "1.0.3",
   "description": "background tasks associated with git://github.com/urcapital/ur_money.git",
   "repository": {
     "type": "git",
-    "url": "git://github.com/urcapital/ur_money_notifier.git"
+    "url": "git://github.com/ur-technology/ur-money-queue-processor.git"
   },
   "main": "build/main.js",
   "engines": {
