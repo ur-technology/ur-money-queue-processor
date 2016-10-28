@@ -43,7 +43,8 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(importQueue, task);
       let blockNumber: number = parseInt(task._id);
-      let lastMinedBlockNumber = QueueProcessor.web3().eth.blockNumber;
+      let eth = QueueProcessor.web3().eth;
+      let lastMinedBlockNumber = eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
         self.logAndResolveIfPossible(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
@@ -168,7 +169,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         break;
       case "received":
         event.title = "UR Received";
-        event.messageText = `You received ${ urAmount } UR from ${ transaction.send.name }`;
+        event.messageText = `You received ${ urAmount } UR from ${ transaction.sender.name }`;
         event.profilePhotoUrl = transaction.sender.profilePhotoUrl;
     }
     return _.omitBy(event, _.isNil);
@@ -352,7 +353,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
             let priorBalance: BigNumber = new BigNumber(priorTransaction.balance);
             resolve(priorBalance);
           } else {
-            log.warn("no prior balance available - using 0 instead");
+            log.debug("no prior balance available - using 0 instead");
             resolve(new BigNumber(0));
           }
         } else {
