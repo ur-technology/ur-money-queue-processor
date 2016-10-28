@@ -111,13 +111,18 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private transactionType(transaction: any, userId: string) {
     if (this.isSignUpBonus(transaction.urTransaction)) {
       return "earned";
-    } else if (transaction.sender.userId == userId) {
-      return "sent";
     } else if (transaction.receiver.userId == userId) {
       return "received";
+    } else if (transaction.sender.userId == userId) {
+      return "sent";
     } else {
       return "unknown";
     }
+  }
+
+  private calculateAmount(transaction: any) {
+    let sign = _.includes(['received', 'earned'], transaction.type) ? 1 : -1;
+    return new BigNumber(transaction.baseAmount).times(sign);
   }
 
   private addTransactionsToUser(blockNumber: number, transactions: any[], userId: string): Promise<any> {
@@ -128,9 +133,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         let balance = priorBalance;
         let finalized = false;
         _.each(transactions, (transaction: any) => {
-          balance = balance.plus(new BigNumber(transaction.amount));
-          transaction.balance = balance.toPrecision();
           transaction.type = self.transactionType(transaction, userId);
+          let amount = self.calculateAmount(transaction);
+          transaction.amount = amount.toPrecision();
+          balance = balance.plus(amount);
+          transaction.balance = balance.toPrecision();
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
             self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction)).then(() => {
               transactionsRemaining--;
@@ -286,7 +293,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       minedAt: blockTimestamp * 1000,
       sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
       urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
+      baseAmount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
     });
     return transaction;
   }
