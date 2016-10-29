@@ -303,9 +303,17 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         _.each(transactions, (transaction) => {
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
             if (snapshot.exists()) {
+              // if a pending transaction was already created by the app,
+              // make sure we don't overwrite certain fields
               let existingTransaction = snapshot.val();
-              // make sure we don't overwrite certain fields if they already exist
-              _.merge(transaction, _.pick(existingTransaction, ['createdAt']));
+              _.merge(transaction, _.pick(existingTransaction, [
+                'createdAt',
+                'createdBy',
+                'receiver',
+                'sender',
+                'type',
+                'message'
+              ]));
             }
             transactionsRemaining--;
             if (!finalized && transactionsRemaining == 0) {
