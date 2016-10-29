@@ -120,9 +120,18 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     }
   }
 
-  private calculateAmount(transaction: any) {
+
+  private calculateFee(transaction: any): BigNumber {
+    if (!_.includes(['received', 'earned'], transaction.type)) {
+      return new BigNumber(transaction.gasPrice).times(21000);
+    } else {
+      return new BigNumber(0);
+    }
+  }
+
+  private calculateChange(transaction: any, fee: BigNumber) {
     let sign = _.includes(['received', 'earned'], transaction.type) ? 1 : -1;
-    return new BigNumber(transaction.baseAmount).times(sign);
+    return new BigNumber(transaction.amount).times(sign).minus(fee);
   }
 
   private addTransactionsToUser(blockNumber: number, transactions: any[], userId: string): Promise<any> {
@@ -134,10 +143,16 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         let finalized = false;
         _.each(transactions, (transaction: any) => {
           transaction.type = self.transactionType(transaction, userId);
-          let amount = self.calculateAmount(transaction);
-          transaction.amount = amount.toPrecision();
-          balance = balance.plus(amount);
+
+          let fee = self.calculateFee(transaction);
+          transaction.fee = fee.toPrecision();
+
+          let change = self.calculateChange(transaction, fee);
+          transaction.change = change.toPrecision();
+
+          balance = balance.plus(change);
           transaction.balance = balance.toPrecision();
+
           self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
             self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction)).then(() => {
               transactionsRemaining--;
@@ -293,7 +308,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       minedAt: blockTimestamp * 1000,
       sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
       urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-      baseAmount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
+      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
     });
     return transaction;
   }
