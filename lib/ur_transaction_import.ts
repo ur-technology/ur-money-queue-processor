@@ -53,7 +53,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
       self.importTransactions(blockNumber).then(() => {
         // queue another task to import the next block
-        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
           self.logAndResolveIfPossible(importQueue, task, resolve, reject);
         }, (error: string) => {
           log.warn(`unable to add task for next block to queue: ${error}`)
@@ -87,45 +87,25 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
-  private addTransactionsToRoot(blockNumber: number, transactions: any[]): Promise<any> {
-    let self = this;
-    return new Promise((resolve, reject) => {
-      let numTransactionsRemaining = transactions.length;
-      let finalized = false;
-      _.each(transactions, (transaction) => {
-        let transactionRef = self.db.ref(`/transactions/${transaction.urTransaction.hash}`);
-        transactionRef.set(transaction).then(() => {
-          numTransactionsRemaining--;
-          if (!finalized && numTransactionsRemaining == 0) {
-            resolve();
-            finalized = true;
-          }
-        }, (error: string) => {
-          reject(error);
-          finalized = true;
-        });
-      });
-    });
-  }
-
-  private transactionType(transaction: any, userId: string) {
-    if (this.isSignUpBonus(transaction.urTransaction)) {
+  private transactionType(urTransaction: any, addressToUserMapping: any, userId: string) {
+    if (this.isSignUpBonus(urTransaction)) {
       return "earned";
-    } else if (transaction.receiver.userId == userId) {
+    } else if (addressToUserMapping[urTransaction.to] && addressToUserMapping[urTransaction.to].userId == userId) {
       return "received";
-    } else if (transaction.sender.userId == userId) {
+    } else if (addressToUserMapping[urTransaction.from] && addressToUserMapping[urTransaction.from].userId == userId) {
       return "sent";
     } else {
       return "unknown";
     }
   }
 
-
   private calculateFee(transaction: any): BigNumber {
-    if (!_.includes(['received', 'earned'], transaction.type)) {
-      return new BigNumber(transaction.gasPrice).times(21000);
-    } else {
+    if (_.includes(['received', 'earned'], transaction.type)) {
       return new BigNumber(0);
+    } else {
+      let x: BigNumber = new BigNumber(transaction.urTransaction.gasPrice).times(21000)
+      log.trace(x.toPrecision());
+      return new BigNumber(transaction.urTransaction.gasPrice).times(21000);
     }
   }
 
@@ -134,43 +114,33 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return new BigNumber(transaction.amount).times(sign).minus(fee);
   }
 
-  private addTransactionsToUser(blockNumber: number, transactions: any[], userId: string): Promise<any> {
+  private urTransactionsAssociatedWithUser(addressToUserMapping: any, urTransactions: any, userId: string) {
+    return _.filter(urTransactions, (urTransaction: any) => {
+      let fromUser = addressToUserMapping[urTransaction.from];
+      let toUser = addressToUserMapping[urTransaction.to];
+      return (fromUser && fromUser.userId == userId) || (toUser && toUser.userId == userId);
+    });
+  }
+
+  private addTransactionsToUser(transactions: any[], userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.getPriorBalance(blockNumber, userId).then((priorBalance: BigNumber) => {
-        let transactionsRemaining = transactions.length;
-        let balance = priorBalance;
-        let finalized = false;
-        _.each(transactions, (transaction: any) => {
-          transaction.type = self.transactionType(transaction, userId);
-
-          let fee = self.calculateFee(transaction);
-          transaction.fee = fee.toPrecision();
-
-          let change = self.calculateChange(transaction, fee);
-          transaction.change = change.toPrecision();
-
-          balance = balance.plus(change);
-          transaction.balance = balance.toPrecision();
-
-          self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
-            self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction)).then(() => {
-              transactionsRemaining--;
-              if (!finalized && transactionsRemaining == 0) {
-                resolve();
-                finalized = true;
-              }
-            }, (error: string) => {
-              reject(error);
-              finalized = true;
-            });
-          }, (error: string) => {
-            reject(error);
+      let transactionsRemaining = transactions.length;
+      let finalized = false;
+      _.each(transactions, (transaction) => {
+        self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).set(transaction).then(() => {
+          // also create an associated user event
+          return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(transaction));
+        }).then(() => {
+          transactionsRemaining--;
+          if (!finalized && transactionsRemaining == 0) {
             finalized = true;
-          });
+            resolve();
+          }
+        }, (error: string) => {
+          finalized = true;
+          reject(error);
         });
-      }, (error: string) => {
-        reject(error);
       });
     });
   }
@@ -241,41 +211,28 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }
 
         let associatedAddresses: string[] = self.getAssociatedAddresses(urTransactions);
-        let transactions: any[];
         self.lookupUsersByAddresses(associatedAddresses).then((addressToUserMapping) => {
-          self.buildTransactions(urTransactions, block.timestamp, addressToUserMapping).then((transactions) => {
-            self.addTransactionsToRoot(blockNumber, transactions).then(() => {
-
-              let users = _.values(addressToUserMapping);
-              let userIds = _.uniq(_.map(users, 'userId')) as string[];
-              let userIdsRemaining = userIds.length;
-              if (userIdsRemaining == 0) {
+          let users = _.values(addressToUserMapping);
+          let userIds = _.uniq(_.map(users, 'userId')) as string[];
+          let userIdsRemaining = userIds.length;
+          if (userIdsRemaining == 0) {
+            resolve();
+            return;
+          }
+          let finalized = false;
+          _.each(userIds, (userId) => {
+            self.buildTransactions(blockNumber, block.timestamp, urTransactions, addressToUserMapping, userId).then((transactions) => {
+              return self.addTransactionsToUser(transactions, userId);
+            }).then(() => {
+              userIdsRemaining--;
+              if (!finalized && userIdsRemaining == 0) {
                 resolve();
-                return;
-              }
-
-              let finalized = false;
-              _.each(userIds, (userId) => {
-                let associatedTransactions = _.filter(transactions, (t: any) => {
-                  return t.sender.userId == userId || t.receiver.userId == userId;
-                });
-                self.addTransactionsToUser(blockNumber, associatedTransactions, userId).then(() => {
-                  userIdsRemaining--;
-                  if (!finalized && userIdsRemaining == 0) {
-                    resolve();
-                    finalized = true;
-                  };
-                }, (error: string) => {
-                  reject(error);
-                  finalized = true;
-                });
-              });
-
+                finalized = true;
+              };
             }, (error: string) => {
               reject(error);
+              finalized = true;
             });
-          }, (error: string) => {
-            reject(error);
           });
         }, (error: string) => {
           reject(error);
@@ -295,24 +252,6 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
   }
 
-  private buildTransaction(urTransaction: any, blockTimestamp: number, addressToUserMapping: any, existingTransaction: any): any {
-    let transaction: any = {
-      createdAt: firebase.database.ServerValue.TIMESTAMP,
-      sender: this.sender(urTransaction, addressToUserMapping),
-      receiver: this.receiver(urTransaction, addressToUserMapping),
-      createdBy: this.isSignUpBonus(urTransaction) ? "UR Network" : "Unknown"
-    };
-    _.merge(transaction, existingTransaction);
-    _.merge(transaction, {
-      updatedAt: firebase.database.ServerValue.TIMESTAMP,
-      minedAt: blockTimestamp * 1000,
-      sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-      urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-      amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
-    });
-    return transaction;
-  }
-
   private isSignUpBonus(urTransaction: any): boolean {
     return _.includes([
       "0x482cf297b08d4523c97ec3a54e80d2d07acd76fa",
@@ -325,25 +264,61 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     ], urTransaction.from);
   }
 
-  private buildTransactions(urTransactions: any[], blockTimestamp: number, addressToUserMapping: any): Promise<any> {
+
+  private buildTransactions(blockNumber: number, blockTimestamp: number, urTransactions: any[], addressToUserMapping: any, userId: string): Promise<any[]> {
     let self = this;
     return new Promise((resolve, reject) => {
-      let transactions: any[] = [];
-      let finalized = false
-      let urTransactionsRemaining = urTransactions.length;
-      _.each(urTransactions, (urTransaction) => {
-        self.db.ref(`/transactions/${urTransaction.hash}`).once('value', (existingTransactionSnapshot: firebase.database.DataSnapshot) => {
-          let transaction = self.buildTransaction(urTransaction, blockTimestamp, addressToUserMapping, existingTransactionSnapshot.val() || {});
-          transactions.push(transaction);
-          urTransactionsRemaining--;
-          if (!finalized && urTransactionsRemaining == 0) {
-            resolve(transactions);
-            finalized == true;
-          }
-        }, (error: string) => {
-          reject(error);
-          finalized == true;
+      self.getPriorBalance(blockNumber, userId).then((priorBalance: BigNumber) => {
+        let associatedUrTransactions =  self.urTransactionsAssociatedWithUser(addressToUserMapping, urTransactions, userId);
+        let balance: BigNumber = priorBalance;
+        let transactions = _.map(associatedUrTransactions, (urTransaction) => {
+          let transaction: any = {
+            type: self.transactionType(urTransaction, addressToUserMapping, userId),
+            sender: this.sender(urTransaction, addressToUserMapping),
+            receiver: this.receiver(urTransaction, addressToUserMapping),
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            createdBy: this.isSignUpBonus(urTransaction) ? "UR Network" : "Unknown",
+            updatedAt: firebase.database.ServerValue.TIMESTAMP,
+            minedAt: blockTimestamp * 1000,
+            sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+            urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
+            amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
+          };
+
+          let fee = self.calculateFee(transaction);
+          let change = self.calculateChange(transaction, fee);
+          balance = balance.plus(change);
+
+          _.merge( transaction, {
+            fee: fee.toPrecision(),
+            change: change.toPrecision(),
+            balance: balance.toPrecision()
+          });
+
+          return transaction;
         });
+
+        let finalized = false;
+        let transactionsRemaining = transactions.length;
+        _.each(transactions, (transaction) => {
+          self.db.ref(`/users/${userId}/transactions/${transaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
+            if (snapshot.exists()) {
+              let existingTransaction = snapshot.val();
+              // make sure we don't overwrite certain fields if they already exist
+              _.merge(transaction, _.pick(existingTransaction, ['createdAt']));
+            }
+            transactionsRemaining--;
+            if (!finalized && transactionsRemaining == 0) {
+              finalized = true;
+              resolve(transactions);
+            }
+          }, (error: string) => {
+            finalized = true;
+            reject(error);
+          });
+        });
+      }, (error: string) => {
+        reject(error);
       });
     });
   }

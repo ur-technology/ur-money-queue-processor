@@ -96,6 +96,9 @@ export class QueueProcessor {
       this.logAndReject(queue, task, `undefined value in object ${JSON.stringify(task)}`, reject);
       return false
     } else {
+      if (!queue.specId) {
+        log.info(`specId not defined!`);
+      }
       log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - resolved`);
       resolve(task);
       return true;
