@@ -68,7 +68,7 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
   }
 
   private isCompletelySignedUp(user: any) {
-    return user.registration && user.registration.verified && !!user.name && !!user.profilePhotoUrl && !!user.wallet && !!user.wallet.address;
+    return user.registration && user.registration.verified && !!user.name && !!user.wallet && !!user.wallet.address;
   }
 
 }
