@@ -44,7 +44,7 @@ export class InvitationQueueProcessor extends QueueProcessor {
             downlineLevel: sponsor.downlineLevel + 1
           };
           newUser.name = self.fullName(newUser);
-          newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser.name);
+          newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser);
           let newUserRef = self.db.ref('/users').push(newUser);
 
           // add new user to sponsor's downline users
