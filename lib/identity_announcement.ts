@@ -62,14 +62,19 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           return;
         }
 
+        let address = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS;
+        let password = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD;
+        let val: any;
+        try {
+          val = QueueProcessor.web3().personal.unlockAccount(address, password, 1000);
+        } catch(error) {
+          error = `got error when attempting to unlock account ${address}: ${error}`;
+          log.warn(error);
+          rejectOnce(error);
+          return;
+        }
+
         let tx = self.buildTransaction(user.wallet.address, gasLimit);
-
-        QueueProcessor.web3().personal.unlockAccount(
-          QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS,
-          QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD,
-          1000
-        );
-
         registrationRef.update({ status: "announcement-started" });
         QueueProcessor.web3().eth.sendTransaction(tx, (error: string, hash: string) => {
           registrationRef.update({
