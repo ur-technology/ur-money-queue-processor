@@ -30,34 +30,44 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
     let codeGenerationOptions = { 'specId': 'code_generation', 'numWorkers': 1, sanitize: false };
     let codeGenerationQueue = new self.Queue(queueRef, codeGenerationOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(codeGenerationQueue, task);
-      self.lookupUsersByPhone(task.phone).then((result) => {
-        // TODO: handle case where there are multiple invitations
-        let matchingUser = _.first(result.matchingUsers);
-        let matchingUserId = _.first(result.matchingUserIds);
-        if (!matchingUser) {
+
+      if (!this.isCountrySupported(task.countryCode)) {
+        task._new_state = "code_generation_canceled_because_user_from_not_supported_country";
+        self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
+        return;
+      }
+
+      self.lookupUsersByPhone(task.phone).then((matchingUsers) => {
+
+        if (_.isEmpty(matchingUsers)) {
           log.info(`no matching user found for ${task.phone}`);
           task._new_state = "code_generation_canceled_because_user_not_invited";
           self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
-        log.debug(`matching user with userId ${matchingUserId} found for phone ${task.phone}`);
-
-        if (!this.isCountrySupported(task.countryCode)) {
-          task._new_state = "code_generation_canceled_because_user_from_not_supported_country";
+        let activeUsers = _.reject(matchingUsers, 'disabled');
+        if (_.isEmpty(activeUsers)) {
+          let disabledUser: any = _.first(matchingUsers);
+          log.info(`found matching user ${disabledUser.userId} for ${task.phone} but user was disabled`);
+          task._new_state = "code_generation_canceled_because_user_disabled";
           self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
+        // TODO: handle case where there are multiple invitations; for now, choose first user
+        let matchingUser: any = _.first(activeUsers);
+        log.debug(`matching user with userId ${matchingUser.userId} found for phone ${task.phone}`);
+
         let verificationCode = self.generateVerificationCode();
         self.sendMessage(task.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
           if (error) {
-            log.info(`error sending message to user with userId ${matchingUserId} and phone ${task.phone}: ${error}`);
+            log.info(`error sending message to user with userId ${matchingUser.userId} and phone ${task.phone}: ${error}`);
             self.logAndReject(codeGenerationQueue, task, error, reject);
           } else {
-            task.userId = matchingUserId;
+            task.userId = matchingUser.userId;
             task.verificationCode = verificationCode;
-            task._state = "code_generation_completed_and_sms_sent"; // TODO: change this from _state to _new_state
+            task._new_state = "code_generation_completed_and_sms_sent";
             self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
           }
         });
@@ -76,10 +86,34 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
         log.debug(`submittedVerificationCode ${task.submittedVerificationCode} does not match actual verificationCode ${task.verificationCode}`);
         task.verificationResult = { codeMatch: false };
       }
-      self.logAndResolveIfPossible(codeMatchingQueue, task, resolve, reject);
+      self.updateFailedLoginCount(task.userId, task.verificationResult.codeMatch).then(() => {
+        self.logAndResolveIfPossible(codeMatchingQueue, task, resolve, reject);
+      }, (error) => {
+        self.logAndReject(codeMatchingQueue, task, error, reject);
+      });
     });
 
     return [codeGenerationQueue, codeMatchingQueue];
+  }
+
+  private updateFailedLoginCount(userId: string, codeMatch: boolean): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.lookupUserById(userId).then((user: any) => {
+        let attrs: any = {
+          failedLoginCount: codeMatch ? 0 : (user.failedLoginCount || 0) + 1,
+          updatedAt: firebase.database.ServerValue.TIMESTAMP
+        };
+        if (attrs.failedLoginCount >= 7) {
+          attrs.disabled = true;
+        }
+        return self.db.ref(`/users/${userId}`).update(attrs);
+      }).then(() => {
+        resolve();
+      }, (error) => {
+        reject(error);
+      });
+    });
   }
 
   private sendMessage(phone: string, messageText: string): Promise<string> {

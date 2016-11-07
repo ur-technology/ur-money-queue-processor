@@ -32,8 +32,8 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       }
       let userId: string = task.userId;
       self.lookupUserById(userId).then((user: any) => {
-        let status = _.trim((user.registration && user.registration.status) || "");
-        if (status && status != "initial") {
+        let status = self.registrationStatus(user);
+        if (status !== 'initial') {
           rejectOnce(`unexpected status ${user.registration.status}`);
           return;
         }
@@ -59,15 +59,14 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
             rejectOnce(`something went wrong on the client: ${error}`);
             return;
           }
-          let verified: boolean = !!verificationData.Record && verificationData.Record.RecordStatus == "match";
+          let status = verificationData.Record && verificationData.Record.RecordStatus == "match" ? "verification-succeeded": "verification-pending";
           registrationRef.update({
-            status: verified ? "verification-succeeded": "verification-pending",
+            status: status,
             verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
-            verified: verified,
             verificationArgs: task.verificationArgs,
             verificationResult: verificationData.Record
           });
-          self.logAndResolveIfPossible(queue, _.merge(task, {result: {verified: verified}}), resolve, reject);
+          self.logAndResolveIfPossible(queue, _.merge(task, {result: {status: status}}), resolve, reject);
         });
       }, (error: any) => {
         rejectOnce(`could not find user with id ${userId}: ${error}`);

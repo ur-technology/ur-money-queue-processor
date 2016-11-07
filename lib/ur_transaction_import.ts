@@ -44,6 +44,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       self.startTask(importQueue, task);
       let blockNumber: number = parseInt(task._id);
       let eth = QueueProcessor.web3().eth;
+      if (!QueueProcessor.web3().isConnected() || !eth) {
+        self.logAndReject(importQueue, task, 'unable to get connection to ur transaction relay', reject);
+        return;
+      }
+
       let lastMinedBlockNumber = eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
@@ -199,6 +204,13 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       QueueProcessor.web3().eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
           error = `Could not retrieve transactions for blockNumber ${blockNumber}: ${error};`
+          log.warn(error);
+          reject(error);
+          return;
+        }
+
+        if (!block) {
+          error = `Could not retrieve block for blockNumber ${blockNumber};`
           log.warn(error);
           reject(error);
           return;

@@ -46,7 +46,12 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           rejectOnce(`no wallet address set`);
           return;
         }
+
         let eth = QueueProcessor.web3().eth;
+        if (!QueueProcessor.web3().isConnected() || !eth) {
+          rejectOnce('unable to get connection to ur transaction relay');
+          return;
+        }
         if (!eth.gasPrice) {
           rejectOnce(`eth.gasPrice not set`);
           return;

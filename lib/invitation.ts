@@ -21,14 +21,34 @@ export class InvitationQueueProcessor extends QueueProcessor {
     let options = { 'specId': 'process_invitation', 'numWorkers': 1, 'sanitize': false };
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
-      self.lookupUsersByPhone(task.invitee.phone).then((result) => {
-        let matchingUser: any = _.first(result.matchingUsers);
-        if (matchingUser && matchingUser.identityVerificationRequestedAt) {
-          self.logAndReject(queue, task, `Sorry, ${matchingUser.name} has already signed up with UR Money.`, reject);
+      self.lookupUsersByPhone(task.invitee.phone).then((matchingUsers) => {
+        let matchingUser: any = _.first(matchingUsers);
+        let status = self.registrationStatus(matchingUser);
+        if (status !== 'initial') {
+          self.logAndReject(queue, task, `Sorry, ${matchingUser.name} has already responded to an invitation.`, reject);
           return;
         }
 
         self.lookupUserById(task.sponsorUserId).then((sponsor: any) => {
+          if (!sponsor) {
+            self.logAndReject(queue, task, "Could not find associated sponsor.", reject);
+            return;
+          }
+
+          if (sponsor.disabled) {
+            self.logAndReject(queue, task, `Canceling invitation because sponsor has been disabled`, reject);
+            return;
+          }
+
+          if (sponsor.invitesDisabled) {
+            self.logAndReject(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
+            return;
+          }
+
+          if (!sponsor.downlineLevel) {
+            log.warn('sponsor lacks a downline level');
+          }
+
           // add new user to users list
           let newUser: any = {
             createdAt: firebase.database.ServerValue.TIMESTAMP,
@@ -41,7 +61,7 @@ export class InvitationQueueProcessor extends QueueProcessor {
               name: sponsor.name,
               profilePhotoUrl: sponsor.profilePhotoUrl
             },
-            downlineLevel: sponsor.downlineLevel + 1
+            downlineLevel: (sponsor.downlineLevel || 0) + 1
           };
           newUser.name = self.fullName(newUser);
           newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser);

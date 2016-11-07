@@ -116,7 +116,7 @@ export class QueueProcessor {
       }
 
       let text: string;
-      if (user.registration && user.registration.verified) {
+      if (self.isCompletelySignedUp(user)) {
         text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
       } else {
         text = "This is a reminder that " + self.fullName(user.sponsor) + " has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
@@ -124,7 +124,7 @@ export class QueueProcessor {
       text = text + " put url here";
       userSnapshot.ref.child("smsMessages").push({
         name: messageName,
-        type: user.registration && user.registration.verified ? "signUp" : "invitation",
+        type: self.isCompletelySignedUp(user) ? "signUp" : "invitation",
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         sendAttempted: false,
         phone: user.phone,
@@ -160,7 +160,7 @@ export class QueueProcessor {
     });
   }
 
-  lookupUsersByPhone(phone: string): Promise<any> {
+  lookupUsersByPhone(phone: string): Promise<any[]> {
     let self = this;
     return new Promise((resolve, reject) => {
       self.db.ref("/users").orderByChild("phone").equalTo(phone).once("value", (snapshot: firebase.database.DataSnapshot) => {
@@ -173,7 +173,7 @@ export class QueueProcessor {
         let sortedUsers = _.reverse(_.sortBy(users, (user) => { return self.completenessRank(user); }));
         let sortedUserIds = _.map(sortedUsers, (user) => { return user.userId });
 
-        resolve({ matchingUsers: sortedUsers, matchingUserIds: sortedUserIds });
+        resolve(sortedUsers);
       }, (error: string) => {
         reject(error);
       });
@@ -197,6 +197,27 @@ export class QueueProcessor {
     });
   }
 
+  registrationStatus(user: any): string {
+    return _.trim((user && user.registration && user.registration.status) || "initial");
+  }
+
+  verificationCompleted(user: any) {
+    return _.includes([
+        'verification-succeeded',
+        'announcement-started',
+        'announcement-requested',
+        'announcement-failed',
+        'announcement-succeeded'
+      ], this.registrationStatus(user));
+  }
+
+  isCompletelySignedUp(user: any) {
+    return !user.disabled &&
+      this.verificationCompleted(user),
+      !!user.name &&
+      !!user.wallet && !!user.wallet.address;
+  }
+
   private numberToHexString(n: number) {
     return "0x" + n.toString(16);
   }
@@ -206,7 +227,10 @@ export class QueueProcessor {
   }
 
   private completenessRank(user: any) {
-    return (user.registration && user.registration.verified ? 10000 : 0) + (user.wallet && !!user.wallet.address ? 1000 : 0) + (user.identityVerificationRequestedAt ? 100 : 0) +  (user.name ? 10 : 0) + (user.profilePhotoUrl ? 1 : 0);
+    return (this.verificationCompleted(user) ? 1000 : 0) +
+     (user.wallet && !!user.wallet.address ? 100 : 0) +
+     (user.name ? 10 : 0) +
+     (user.profilePhotoUrl ? 1 : 0);
   }
 
   private containsUndefinedValue(objectOrArray: any): boolean {

@@ -27,13 +27,13 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
       let phoneToUserMapping: any = {};
       let finalized = false;
       _.each(task.phones, (phone) => {
-        self.lookupSignedUpUserByPhone(phone).then((result) => {
-          if (result.signedUpUser) {
+        self.lookupSignedUpUserByPhone(phone).then((signedUpUser) => {
+          if (signedUpUser) {
             phoneToUserMapping[phone] = {
-              userId: result.signedUpUserId,
-              name: result.signedUpUser.name,
-              profilePhotoUrl: result.signedUpUser.profilePhotoUrl,
-              wallet: result.signedUpUser.wallet
+              userId: signedUpUser.userId,
+              name: signedUpUser.name,
+              profilePhotoUrl: signedUpUser.profilePhotoUrl,
+              wallet: signedUpUser.wallet
             };
           }
           phonesRemaining--;
@@ -58,17 +58,13 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
   private lookupSignedUpUserByPhone(phone: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.lookupUsersByPhone(phone).then((result) => {
-        let index = _.findIndex(result.matchingUsers, (user) => {
+      self.lookupUsersByPhone(phone).then((matchingUsers) => {
+        let index = _.findIndex(matchingUsers, (user) => {
           return self.isCompletelySignedUp(user);
         });
-        resolve({ signedUpUser: result.matchingUsers[index], signedUpUserId: result.matchingUserIds[index] });
+        resolve(matchingUsers[index]);
       });
     });
-  }
-
-  private isCompletelySignedUp(user: any) {
-    return user.registration && user.registration.verified && !!user.name && !!user.wallet && !!user.wallet.address;
   }
 
 }
