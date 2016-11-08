@@ -185,8 +185,9 @@ export class QueueProcessor {
     return new Promise((resolve, reject) => {
       let userRef = self.db.ref(`/users/${userId}`);
       userRef.once('value', (snapshot: firebase.database.DataSnapshot) => {
-        let user = snapshot.val();
+        let user: any = snapshot.val();
         if (user) {
+          user.userId = userId;
           resolve(user);
         } else {
           let error = `no user exists at location ${userRef.toString()}`
@@ -204,7 +205,6 @@ export class QueueProcessor {
   verificationCompleted(user: any) {
     return _.includes([
         'verification-succeeded',
-        'announcement-started',
         'announcement-requested',
         'announcement-failed',
         'announcement-succeeded'

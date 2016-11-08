@@ -93,7 +93,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   }
 
   private transactionType(urTransaction: any, addressToUserMapping: any, userId: string) {
-    if (this.isSignUpBonus(urTransaction)) {
+    if (this.isSignUpTransaction(urTransaction)) {
       return "earned";
     } else if (addressToUserMapping[urTransaction.to] && addressToUserMapping[urTransaction.to].userId == userId) {
       return "received";
@@ -186,13 +186,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let addresses: string[] = [];
     _.each(urTransactions, (urTransaction) => {
       addresses.push(urTransaction.from);
-      // if (self.isPrivilegedTransaction(urTransaction)) {
-      //   let balanceChanges = self.getBalanceChangesFromSignupTransaction(urTransaction.transaction.hash);
-      //   addresses.concat(_.keys(balanceChanges));
-      // } else {
-      //   addresses.push(urTransaction.transaction.to);
-      // }
-      addresses.push(urTransaction.to);
+      if (self.isSignUpTransaction(urTransaction)) {
+        let balanceChanges = self.getBalanceChangesFromSignUpTransaction(urTransaction);
+        addresses.concat(_.keys(balanceChanges));
+      } else {
+        addresses.push(urTransaction.to);
+      }
     });
     return _.uniq(addresses) as string[];
   }
@@ -255,7 +254,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
 
   private sender(urTransaction: any, addressToUserMapping: any): any {
-    let user: any = this.isSignUpBonus(urTransaction) ? { name: "UR Network" } : ( addressToUserMapping[urTransaction.from] || { name: "Unknown User" } );
+    let user: any = this.isSignUpTransaction(urTransaction) ? { name: "UR Network" } : ( addressToUserMapping[urTransaction.from] || { name: "Unknown User" } );
     return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
   }
 
@@ -264,7 +263,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
   }
 
-  private isSignUpBonus(urTransaction: any): boolean {
+  private isSignUpTransaction(urTransaction: any): boolean {
     return _.includes([
       "0x482cf297b08d4523c97ec3a54e80d2d07acd76fa",
       "0xcc74e28cec33a784c5cd40e14836dd212a937045",
@@ -289,12 +288,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
             sender: this.sender(urTransaction, addressToUserMapping),
             receiver: this.receiver(urTransaction, addressToUserMapping),
             createdAt: firebase.database.ServerValue.TIMESTAMP,
-            createdBy: this.isSignUpBonus(urTransaction) ? "UR Network" : "Unknown",
+            createdBy: this.isSignUpTransaction(urTransaction) ? "UR Network" : "Unknown",
             updatedAt: firebase.database.ServerValue.TIMESTAMP,
             minedAt: blockTimestamp * 1000,
             sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
             urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-            amount: this.isSignUpBonus(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
+            amount: this.isSignUpTransaction(urTransaction) ? new BigNumber(2000).times(1000000000000000000).toPrecision() : urTransaction.value
           };
 
           let fee = self.calculateFee(transaction);
@@ -410,6 +409,52 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         reject(error);
       });
     });
+  }
+
+  private getBalanceChangesFromSignUpTransaction(tx: any): any {
+    var signupReward = new BigNumber("2000000000000000000000");
+    var rewards = [
+      new BigNumber("60600000000000000000"),
+      new BigNumber("60600000000000000000"),
+      new BigNumber("121210000000000000000"),
+      new BigNumber("181810000000000000000"),
+      new BigNumber("303030000000000000000"),
+      new BigNumber("484840000000000000000"),
+      new BigNumber("787910000000000000000")
+    ];
+    var bal = [];
+    var ridx = 0;
+    bal[0] = {addr: tx.to, wei: signupReward};
+    var curTx = this.getReferralTx(tx.input);
+    while (bal.length < 8) {
+      if (curTx === undefined) { return undefined; }
+      if (curTx.block === undefined) { break; }
+      var nextTx = eth.getTransaction(curTx.hash);
+      bal[bal.length] = {addr: nextTx.to, wei: rewards[ridx++]};
+      curTx = nextTx.input;
+    }
+    var r = {}
+    for (i in bal) { r[bal[i].addr] = bal[i].wei; }
+    return r;
+  }
+
+  // get the referral transaction
+  private getReferralTx(input: any): any {
+    if ((input.length != 4) && (input.length != 84)) { return undefined; }
+    var ver = input.slice(2, 4);
+    if (ver !== "01") { return undefined; }
+    if (input.length == 4) {
+      // this signup was made by one of the privileged addresses
+      return {};
+    } else {
+      // theres is more members in the chain
+      var blk = input.slice(4, 20);
+      var hash = input.slice(20, 84);
+      return {
+        block: new BigNumber(blk, 16),
+        hash: hash,
+      }
+    }
   }
 
 }
