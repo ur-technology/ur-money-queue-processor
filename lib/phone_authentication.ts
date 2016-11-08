@@ -146,7 +146,7 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
   };
 
   private isCountrySupported(countryCode: string) {
-    let listOfSupportedCountries = ["+1"];//right now only US is in the list of supported countries
+    let listOfSupportedCountries = ["+1"]; //right now only US is in the list of supported countries
     return listOfSupportedCountries.indexOf(countryCode) != -1;
   }
 

@@ -45,9 +45,20 @@ export class InvitationQueueProcessor extends QueueProcessor {
             return;
           }
 
+          if (!sponsor.wallet || !sponsor.wallet.address || !sponsor.wallet.announcementTransactionHash || !sponsor.wallet.announcementTransactionBlockNumber) {
+            self.logAndReject(queue, task, `Canceling invitation because sponsor lacks properly configured wallet`, reject);
+            return;
+          }
+
+          if (sponsor.invitesDisabled) {
+            self.logAndReject(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
+            return;
+          }
+
           if (!sponsor.downlineLevel) {
             log.warn('sponsor lacks a downline level');
           }
+
 
           // add new user to users list
           let newUser: any = {
