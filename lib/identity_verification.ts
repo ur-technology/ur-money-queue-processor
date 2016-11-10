@@ -66,7 +66,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
             verificationArgs: task.verificationArgs,
             verificationResult: verificationData.Record
           });
-          self.logAndResolveIfPossible(queue, _.merge(task, {result: {status: status}}), resolve, reject);
+          self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
         });
       }, (error: any) => {
         rejectOnce(`could not find user with id ${userId}: ${error}`);

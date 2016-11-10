@@ -25,33 +25,33 @@ export class InvitationQueueProcessor extends QueueProcessor {
         let matchingUser: any = _.first(matchingUsers);
         let status = self.registrationStatus(matchingUser);
         if (status !== 'initial') {
-          self.logAndReject(queue, task, `Sorry, ${matchingUser.name} has already responded to an invitation.`, reject);
+          self.rejectTask(queue, task, `Sorry, ${matchingUser.name} has already responded to an invitation.`, reject);
           return;
         }
 
         self.lookupUserById(task.sponsorUserId).then((sponsor: any) => {
           if (!sponsor) {
-            self.logAndReject(queue, task, "Could not find associated sponsor.", reject);
+            self.rejectTask(queue, task, "Could not find associated sponsor.", reject);
             return;
           }
 
           if (sponsor.disabled) {
-            self.logAndReject(queue, task, `Canceling invitation because sponsor has been disabled`, reject);
+            self.rejectTask(queue, task, `Canceling invitation because sponsor has been disabled`, reject);
             return;
           }
 
           if (sponsor.invitesDisabled) {
-            self.logAndReject(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
+            self.rejectTask(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
             return;
           }
 
-          if (!sponsor.wallet || !sponsor.wallet.address || !sponsor.wallet.announcementTransactionHash || !sponsor.wallet.announcementTransactionBlockNumber) {
-            self.logAndReject(queue, task, `Canceling invitation because sponsor lacks properly configured wallet`, reject);
+          if (!sponsor.wallet || !sponsor.wallet.address || !sponsor.wallet.announcementTransaction.hash || !sponsor.wallet.announcementTransaction.blockNumber) {
+            self.rejectTask(queue, task, `Canceling invitation because sponsor lacks properly configured wallet`, reject);
             return;
           }
 
           if (sponsor.invitesDisabled) {
-            self.logAndReject(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
+            self.rejectTask(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
             return;
           }
 
@@ -83,10 +83,10 @@ export class InvitationQueueProcessor extends QueueProcessor {
           let sponsorRef = self.db.ref(`/users/${task.sponsorUserId}`);
           sponsorRef.child(`downlineUsers/${newUserId}`).set({ name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl });
           log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${task.sponsorUserId}`);
-          self.logAndResolveIfPossible(queue, task, resolve, reject);
+          self.resolveTask(queue, task, resolve, reject);
         });
       }, (error) => {
-        self.logAndReject(queue, task, error, reject);
+        self.rejectTask(queue, task, error, reject);
         return;
       });
     });

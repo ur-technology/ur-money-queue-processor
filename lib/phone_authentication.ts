@@ -33,7 +33,7 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
 
       if (!this.isCountrySupported(task.countryCode)) {
         task._new_state = "code_generation_canceled_because_user_from_not_supported_country";
-        self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
+        self.resolveTask(codeGenerationQueue, task, resolve, reject);
         return;
       }
 
@@ -42,7 +42,7 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
         if (_.isEmpty(matchingUsers)) {
           log.info(`no matching user found for ${task.phone}`);
           task._new_state = "code_generation_canceled_because_user_not_invited";
-          self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
+          self.resolveTask(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
@@ -51,7 +51,7 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
           let disabledUser: any = _.first(matchingUsers);
           log.info(`found matching user ${disabledUser.userId} for ${task.phone} but user was disabled`);
           task._new_state = "code_generation_canceled_because_user_disabled";
-          self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
+          self.resolveTask(codeGenerationQueue, task, resolve, reject);
           return;
         }
 
@@ -63,16 +63,16 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
         self.sendMessage(task.phone, `Your UR Money verification code is ${verificationCode}`).then((error: string) => {
           if (error) {
             log.info(`error sending message to user with userId ${matchingUser.userId} and phone ${task.phone}: ${error}`);
-            self.logAndReject(codeGenerationQueue, task, error, reject);
+            self.rejectTask(codeGenerationQueue, task, error, reject);
           } else {
             task.userId = matchingUser.userId;
             task.verificationCode = verificationCode;
             task._new_state = "code_generation_completed_and_sms_sent";
-            self.logAndResolveIfPossible(codeGenerationQueue, task, resolve, reject);
+            self.resolveTask(codeGenerationQueue, task, resolve, reject);
           }
         });
       }, (error) => {
-        self.logAndReject(codeGenerationQueue, task, error, reject);
+        self.rejectTask(codeGenerationQueue, task, error, reject);
       });
     });
 
@@ -87,9 +87,9 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
         task.verificationResult = { codeMatch: false };
       }
       self.updateFailedLoginCount(task.userId, task.verificationResult.codeMatch).then(() => {
-        self.logAndResolveIfPossible(codeMatchingQueue, task, resolve, reject);
+        self.resolveTask(codeMatchingQueue, task, resolve, reject);
       }, (error) => {
-        self.logAndReject(codeMatchingQueue, task, error, reject);
+        self.rejectTask(codeMatchingQueue, task, error, reject);
       });
     });
 

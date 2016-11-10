@@ -39,7 +39,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       self.startTask(waitQueue, task);
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
-        self.logAndResolveIfPossible(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
+        self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
       }, 15 * 1000);
     });
 
@@ -49,28 +49,28 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       self.eth = QueueProcessor.web3().eth;
       if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.logAndReject(importQueue, task, 'unable to get connection to transaction relay', reject);
+        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject);
         return;
       }
 
       let lastMinedBlockNumber = self.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
-        self.logAndResolveIfPossible(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
+        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
         return;
       }
 
       self.importUrTransactions(blockNumber).then(() => {
         // queue another task to import the next block
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-          self.logAndResolveIfPossible(importQueue, task, resolve, reject);
+          self.resolveTask(importQueue, task, resolve, reject);
         }, (error: string) => {
           log.warn(`unable to add task for next block to queue: ${error}`)
-          self.logAndResolveIfPossible(importQueue, task, resolve, reject);
+          self.resolveTask(importQueue, task, resolve, reject);
         });
       }, (error) => {
         log.warn(`unable to import transactions for block ${blockNumber}: ${error}`);
-        reject(error);
+        rejectTask(importQueue, task, error, reject) {
       });
     });
     return [waitQueue, importQueue];

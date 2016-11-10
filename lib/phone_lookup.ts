@@ -43,7 +43,7 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
               task.result.phoneToUserMapping = phoneToUserMapping;
             }
             task._state = "finished";
-            self.logAndResolveIfPossible(queue, task, resolve, reject);
+            self.resolveTask(queue, task, resolve, reject);
             finalized = true
           }
         }, (error) => {

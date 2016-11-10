@@ -29,9 +29,9 @@ export class ChatQueueProcessor extends QueueProcessor {
           destinationRef.set(chatSummaryCopy);
           log.trace(`copied chatSummary to ${destinationRef.toString()}`);
         });
-        self.logAndResolveIfPossible(queue, task, resolve, reject);
+        self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
-        this.logAndReject(queue, task, error, reject);
+        this.rejectTask(queue, task, error, reject);
       });
     });
     return queue;
@@ -76,12 +76,12 @@ export class ChatQueueProcessor extends QueueProcessor {
               updatedAt: message.sentAt
             });
           });
-          self.logAndResolveIfPossible(queue, task, resolve, reject);
+          self.resolveTask(queue, task, resolve, reject);
         }, (error) => {
-          this.logAndReject(queue, task, error, reject);
+          this.rejectTask(queue, task, error, reject);
         });
       }, (error) => {
-        this.logAndReject(queue, task, error, reject);
+        this.rejectTask(queue, task, error, reject);
       });
     });
     return [queue];

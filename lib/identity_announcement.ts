@@ -27,7 +27,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       let userId: string = task.userId;
       self.eth = QueueProcessor.web3().eth;
       if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.logAndReject(queue, task, 'unable to get connection to transaction relay', reject);
+        self.rejectTask(queue, task, 'unable to get connection to transaction relay', reject);
         return;
       }
 
@@ -40,9 +40,9 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       }).then((announcementTransaction) => {
         return self.publishAnnouncementTransaction(userId, announcementTransaction);
       }).then(() => {
-        self.logAndResolveIfPossible(queue, task, resolve, reject);
+        self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
-        self.logAndReject(queue, task, `got error during identity verification announcement: ${error}`, reject);
+        self.rejectTask(queue, task, `got error during identity verification announcement: ${error}`, reject);
       });
     });
     return [queue];
