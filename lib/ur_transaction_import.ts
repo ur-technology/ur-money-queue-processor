@@ -70,7 +70,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         });
       }, (error) => {
         log.warn(`unable to import transactions for block ${blockNumber}: ${error}`);
-        rejectTask(importQueue, task, error, reject) {
+        self.rejectTask(importQueue, task, error, reject);
       });
     });
     return [waitQueue, importQueue];
