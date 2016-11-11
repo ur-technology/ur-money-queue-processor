@@ -30,7 +30,7 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
         self.lookupSignedUpUserByPhone(phone).then((signedUpUser) => {
           if (signedUpUser && signedUpUser.userId && signedUpUser.name) {
             phoneToUserMapping[phone] = _.omitBy(
-              _.pick(signedUpUser, ['userId', 'name', 'profilePhotoUrl']),
+              _.pick(signedUpUser, ['userId', 'name', 'profilePhotoUrl', 'wallet']),
               _.isNil
             );
           }
