@@ -28,13 +28,11 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
       let finalized = false;
       _.each(task.phones, (phone) => {
         self.lookupSignedUpUserByPhone(phone).then((signedUpUser) => {
-          if (signedUpUser) {
-            phoneToUserMapping[phone] = {
-              userId: signedUpUser.userId,
-              name: signedUpUser.name,
-              profilePhotoUrl: signedUpUser.profilePhotoUrl,
-              wallet: signedUpUser.wallet
-            };
+          if (signedUpUser && signedUpUser.userId && signedUpUser.name) {
+            phoneToUserMapping[phone] = _.omitBy(
+              _.pick(signedUpUser, ['userId', 'name', 'profilePhotoUrl']),
+              _.isNil
+            );
           }
           phonesRemaining--;
           if (!finalized && phonesRemaining == 0) {

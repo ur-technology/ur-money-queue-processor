@@ -42,7 +42,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
         self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
-      }, 15 * 1000);
+      }, 5 * 1000);
     });
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
@@ -128,15 +128,74 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return new BigNumber(userTransaction.amount).times(sign).minus(fee);
   }
 
-  private saveUserTransaction(userTransaction: any, addressToUserMapping: any, userId: string): Promise<any> {
+  private createUserTransaction(blockTimestamp: number, urTransaction: any, addressToUserMapping: any, user: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).set(userTransaction).then(() => {
-        return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
-      }).then(() => {
-        return self.updateWalletIfIsAnnouncmentTransaction(userTransaction.urTransaction, addressToUserMapping, userId);
-      }).then(() => {
-        resolve();
+
+      let userId: string = user.userId;
+      self.getPriorBalance(urTransaction.blockNumber, userId).then((priorBalance: BigNumber) => {
+        let amount: BigNumber = self.userTransactionAmount(urTransaction, addressToUserMapping, userId);
+
+        let userTransaction: any = {
+          type: self.userTransactionType(urTransaction, addressToUserMapping, userId),
+          level: self.userTransactionLevel(urTransaction, addressToUserMapping, userId),
+          sender: self.sender(urTransaction, addressToUserMapping),
+          receiver: self.receiver(urTransaction, addressToUserMapping),
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          createdBy: self.isAnnouncementTransaction(urTransaction) ? "UR Network" : "Unknown",
+          updatedAt: firebase.database.ServerValue.TIMESTAMP,
+          minedAt: blockTimestamp * 1000,
+          sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
+          urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
+          amount: amount.toPrecision()
+        };
+
+        let fee = self.calculateFee(userTransaction);
+        let change = self.calculateChange(userTransaction, fee);
+        let balance = priorBalance.plus(change);
+
+        _.merge( userTransaction, {
+          fee: fee.toPrecision(),
+          change: change.toPrecision(),
+          balance: balance.toPrecision(),
+          title: self.userTransactionTitle(userTransaction),
+          messageText: self.userTransactionMessageText(userTransaction, amount),
+          profilePhotoUrl: self.userTransactionProfilePhotoUrl(userTransaction)
+        });
+        let ignorableValue = (e: any) => {
+          return _.isNil(e) ||
+            ((_.isArray(e) || _.isObject(e)) && _.isEmpty(e)) ||
+            (_.isString(e) && _.isEmpty(_.trim(e)));
+        };
+        userTransaction = _.omitBy(userTransaction, ignorableValue);
+
+        self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
+          if (snapshot.exists()) {
+            // if a pending userTransaction was already created by the app,
+            // make sure we don't overwrite certain fields
+            let existingValues = _.pick(snapshot.val(), [
+              'createdAt',
+              'createdBy',
+              'sender',
+              'receiver',
+              'type',
+              'title',
+              'messageText'
+            ]);
+            existingValues = _.omitBy(existingValues, ignorableValue);
+            _.merge(userTransaction, existingValues);
+          }
+
+          return self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).set(userTransaction);
+        }).then(() => {
+          return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
+        }).then(() => {
+          return self.updateWalletIfIsAnnouncmentTransaction(userTransaction.urTransaction, addressToUserMapping, userId);
+        }).then(() => {
+          resolve();
+        }, (error: string) => {
+          reject(error);
+        });
       }, (error: string) => {
         reject(error);
       });
@@ -294,10 +353,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       self.lookupUsersByAddresses(addresses).then((addressToUserMapping) => {
         // create user transactions for all users affected by this ur transaction
         let users = _.uniqBy(_.values(addressToUserMapping), 'userId');
-        let promises = _.map(users, (user) => {
-          return self.createUserTransaction(blockTimestamp, urTransaction, addressToUserMapping, user);
-        });
-        return Promise.all(promises);
+        return self.createUserTransactions(blockTimestamp, urTransaction, addressToUserMapping, users);
       }).then(() => {
         resolve();
       }, (error) => {
@@ -328,69 +384,20 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     ], urTransaction.from);
   }
 
-  private createUserTransaction(blockTimestamp: number, urTransaction: any, addressToUserMapping: any, user: any): Promise<any[]> {
+  private createUserTransactions(blockTimestamp: number, urTransaction: any, addressToUserMapping: any, users: any[]): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      let userId: string = user.userId;
-      self.getPriorBalance(urTransaction.blockNumber, userId).then((priorBalance: BigNumber) => {
-        let amount: BigNumber = self.userTransactionAmount(urTransaction, addressToUserMapping, userId);
-
-        let userTransaction: any = {
-          type: self.userTransactionType(urTransaction, addressToUserMapping, userId),
-          level: self.userTransactionLevel(urTransaction, addressToUserMapping, userId),
-          sender: self.sender(urTransaction, addressToUserMapping),
-          receiver: self.receiver(urTransaction, addressToUserMapping),
-          createdAt: firebase.database.ServerValue.TIMESTAMP,
-          createdBy: self.isAnnouncementTransaction(urTransaction) ? "UR Network" : "Unknown",
-          updatedAt: firebase.database.ServerValue.TIMESTAMP,
-          minedAt: blockTimestamp * 1000,
-          sortKey: sprintf("%09d-%06d", urTransaction.blockNumber, urTransaction.transactionIndex),
-          urTransaction: _.merge(urTransaction, { gasPrice: urTransaction.gasPrice.toString(), value: urTransaction.value.toString() }),
-          amount: amount.toPrecision()
-        };
-
-        let fee = self.calculateFee(userTransaction);
-        let change = self.calculateChange(userTransaction, fee);
-        let balance = priorBalance.plus(change);
-
-        _.merge( userTransaction, {
-          fee: fee.toPrecision(),
-          change: change.toPrecision(),
-          balance: balance.toPrecision(),
-          title: self.userTransactionTitle(userTransaction),
-          messageText: self.userTransactionMessageText(userTransaction, amount),
-          profilePhotoUrl: self.userTransactionProfilePhotoUrl(userTransaction)
-        });
-        let ignorableValue = (e: any) => {
-          return _.isNil(e) ||
-            ((_.isArray(e) || _.isObject(e)) && _.isEmpty(e)) ||
-            (_.isString(e) && _.isEmpty(_.trim(e)));
-        };
-        userTransaction = _.omitBy(userTransaction, ignorableValue);
-
-        self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
-          if (snapshot.exists()) {
-            // if a pending userTransaction was already created by the app,
-            // make sure we don't overwrite certain fields
-            let existingValues = _.pick(snapshot.val(), [
-              'createdAt',
-              'createdBy',
-              'sender',
-              'receiver',
-              'type',
-              'title',
-              'messageText'
-            ]);
-            existingValues = _.omitBy(existingValues, ignorableValue);
-            _.merge(userTransaction, existingValues);
-          }
-
-          self.saveUserTransaction(userTransaction, addressToUserMapping, userId).then(() => {
-            resolve();
-          }, (error: string) => {
-            reject(error);
-          });
-        });
+      if (_.isEmpty(users)) {
+          resolve();
+          return;
+      }
+      let user: any = users[0];
+      // create user transaction for the first user in the array
+      self.createUserTransaction(blockTimestamp, urTransaction, addressToUserMapping, user).then(() => {
+        // ...then create user transactions for the remaining users
+        return self.createUserTransactions(blockTimestamp, urTransaction, addressToUserMapping, users.slice(1));
+      }).then(() => {
+        resolve();
       }, (error: string) => {
         reject(error);
       });
