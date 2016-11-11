@@ -9,6 +9,8 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private eth: any;
   private transactionWrappers: any = {};
   private TRANSACTION_WRAPPERS_LIMIT = 5000;
+  private priorHash: string;
+  private priorChanges: any[];
 
   init(): Promise<any>[] {
     return [
@@ -101,11 +103,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let fromUserId: any = addressToUserMapping[urTransaction.from] && addressToUserMapping[urTransaction.from].userId;
     let toUserId: any = addressToUserMapping[urTransaction.to] && addressToUserMapping[urTransaction.to].userId;
     if (this.isAnnouncementTransaction(urTransaction)) {
-      if (toUserId == userId) {
-        return 'earned-signup';
-      } else {
-        return 'earned-referral';
-      }
+      return 'earned';
     } else if (toUserId == userId) {
       return 'received';
     } else if (fromUserId == userId) {
@@ -116,7 +114,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   }
 
   private calculateFee(userTransaction: any): BigNumber {
-    if (_.includes(['received', 'earned-signup', 'earned-referral'], userTransaction.type)) {
+    if (_.includes(['received', 'earned'], userTransaction.type)) {
       return new BigNumber(0);
     } else {
       let x: BigNumber = new BigNumber(userTransaction.urTransaction.gasPrice).times(21000)
@@ -126,18 +124,10 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   }
 
   private calculateChange(userTransaction: any, fee: BigNumber) {
-    let sign = _.includes(['received', 'earned-signup', 'earned-referral'], userTransaction.type) ? 1 : -1;
+    let sign = _.includes(['received', 'earned'], userTransaction.type) ? 1 : -1;
     return new BigNumber(userTransaction.amount).times(sign).minus(fee);
   }
 
-  // private urTransactionsAssociatedWithUser(urTransactions: any, userId: string, addressToUserMapping: any) {
-  //   return _.filter(urTransactions, (urTransaction: any) => {
-  //     let fromUser = addressToUserMapping[urTransaction.from];
-  //     let toUser = addressToUserMapping[urTransaction.to];
-  //     return (fromUser && fromUser.userId == userId) || (toUser && toUser.userId == userId);
-  //   });
-  // }
-  //
   private saveUserTransaction(userTransaction: any, addressToUserMapping: any, userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
@@ -182,42 +172,59 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       updatedAt: firebase.database.ServerValue.TIMESTAMP,
       notificationProcessed: false,
       sourceId: userTransaction.urTransaction.hash,
-      sourceType: 'transaction'
-    };
-    switch (userTransaction.type) {
-      case 'earned-signup':
-        event.title = "Sign Up Bonus Received";
-        event.messageText = `You earned a bonus of ${ urAmount } UR for signing up`;
-        event.profilePhotoUrl = userTransaction.receiver.profilePhotoUrl; // TODO: make this match the photo of the person who signed up
-        break;
-      case 'earned-referral':
-        event.title = "Referral Bonus Received";
-        event.messageText = `You earned a bonus of ${ urAmount } UR for signing someone up`;
-        event.profilePhotoUrl = userTransaction.receiver.profilePhotoUrl; // TODO: make this match the photo of the person who signed up
-        break;
-      case 'sent':
-        event.title = "UR Sent";
-        event.messageText = `You sent ${ urAmount } UR to ${ userTransaction.receiver.name }`;
-        event.profilePhotoUrl = userTransaction.receiver.profilePhotoUrl;
-        break;
-      case 'received':
-        event.title = "UR Received";
-        event.messageText = `You received ${ urAmount } UR from ${ userTransaction.sender.name }`;
-        event.profilePhotoUrl = userTransaction.sender.profilePhotoUrl;
+      sourceType: 'transaction',
+      title: userTransaction.title,
+      messageText: userTransaction.messageText,
+      profilePhotoUrl: userTransaction.profilePhotoUrl
     }
     return _.omitBy(event, _.isNil);
   }
 
+
+  private userTransactionProfilePhotoUrl(userTransaction: any) {
+    return userTransaction.type == 'received' ? userTransaction.sender.profilePhotoUrl : userTransaction.receiver.profilePhotoUrl;
+  }
+
+  private userTransactionTitle(userTransaction: any) {
+    switch (userTransaction.type) {
+      case 'earned':
+        return userTransaction.level == 0 ? 'Sign Up Bonus Earned' : `Referral Bonus Earned`;
+
+      case 'received':
+        return 'UR Received';
+
+      case 'sent':
+        return 'UR Sent';
+
+      default:
+        return 'Unrecognized Transaction';
+    }
+  }
+
+  private userTransactionMessageText(userTransaction: any, amount: BigNumber): string {
+    let amountInUr: string = amount.dividedBy('1000000000000000000').toFormat(2);
+
+    switch (userTransaction.type) {
+      case 'sent':
+        return `You sent ${ amountInUr } UR to ${ userTransaction.receiver.name }`;
+
+      case 'received':
+        return `You received ${ amountInUr } UR from ${ userTransaction.sender.name }`;
+
+      case 'earned':
+        if (userTransaction.level == 0) {
+          return `You earned a bonus of ${ amountInUr } UR for signing up`;
+        }
+        return `You earned a bonus of ${ amountInUr } UR for referring ${ userTransaction.receiver.name }`;
+    }
+  }
+
   private addressesAssociatedWithTransaction(urTransaction: any): string[] {
-    let self = this;
     let addresses: string[] = [];
     addresses.push(urTransaction.from);
-    if (self.isAnnouncementTransaction(urTransaction)) {
-      let balanceChanges = self.getBalanceChangesFromAnnouncementTransaction(urTransaction);
-      if (balanceChanges === undefined) {
-        return undefined;
-      }
-      addresses = addresses.concat(_.keys(balanceChanges));
+    if (this.isAnnouncementTransaction(urTransaction)) {
+      let newAddresses: string[] = <string[]> _.map(this.announcementTransactionBalanceChanges(urTransaction), 'to');
+      addresses = addresses.concat(newAddresses);
     } else {
       addresses.push(urTransaction.to);
     }
@@ -263,20 +270,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         return;
       }
 
-      let addresses = self.addressesAssociatedWithTransaction(urTransaction);
-      if (addresses === undefined) {
-        reject(`could not get associated addresses`);
-        return;
-      }
-
-      self.lookupUsersByAddresses(addresses).then((addressToUserMapping) => {
-        let users = _.values(addressToUserMapping);
-        let uniqueUserIds = _.uniq(_.map(users, 'userId')) as string[];
-        let promises = _.map(uniqueUserIds, (userId) => {
-          return self.createUserTransaction(blockTimestamp, urTransaction, addressToUserMapping, userId);
-        });
-        return Promise.all(promises);
-      }).then(() => {
+      // import the first transaction in the array
+      self.importUrTransaction(blockTimestamp, urTransaction).then(() => {
+        // ...then import the remaining transactions
         return self.importUrTransactionsInOrder(blockTimestamp, urTransactions.slice(1));
       }).then(() => {
         resolve();
@@ -286,6 +282,29 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
+  private importUrTransaction(blockTimestamp: number, urTransaction: any): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let addresses = self.addressesAssociatedWithTransaction(urTransaction);
+      if (addresses === undefined) {
+        reject(`could not get associated addresses`);
+        return;
+      }
+
+      self.lookupUsersByAddresses(addresses).then((addressToUserMapping) => {
+        // create user transactions for all users affected by this ur transaction
+        let users = _.uniqBy(_.values(addressToUserMapping), 'userId');
+        let promises = _.map(users, (user) => {
+          return self.createUserTransaction(blockTimestamp, urTransaction, addressToUserMapping, user);
+        });
+        return Promise.all(promises);
+      }).then(() => {
+        resolve();
+      }, (error) => {
+        reject(error);
+      });
+    });
+  }
 
   private sender(urTransaction: any, addressToUserMapping: any): any {
     let user: any = this.isAnnouncementTransaction(urTransaction) ? { name: "UR Network" } : ( addressToUserMapping[urTransaction.from] || { name: "Unknown User" } );
@@ -309,18 +328,16 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     ], urTransaction.from);
   }
 
-  private createUserTransaction(blockTimestamp: number, urTransaction: any, addressToUserMapping: any, userId: string): Promise<any[]> {
+  private createUserTransaction(blockTimestamp: number, urTransaction: any, addressToUserMapping: any, user: any): Promise<any[]> {
     let self = this;
     return new Promise((resolve, reject) => {
+      let userId: string = user.userId;
       self.getPriorBalance(urTransaction.blockNumber, userId).then((priorBalance: BigNumber) => {
-        let amount = self.userTransactionAmount(urTransaction, addressToUserMapping, userId);
-        if (amount == undefined) {
-          reject("unable to determine userTransaction amount");
-          return;
-        }
+        let amount: BigNumber = self.userTransactionAmount(urTransaction, addressToUserMapping, userId);
 
         let userTransaction: any = {
           type: self.userTransactionType(urTransaction, addressToUserMapping, userId),
+          level: self.userTransactionLevel(urTransaction, addressToUserMapping, userId),
           sender: self.sender(urTransaction, addressToUserMapping),
           receiver: self.receiver(urTransaction, addressToUserMapping),
           createdAt: firebase.database.ServerValue.TIMESTAMP,
@@ -339,22 +356,33 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         _.merge( userTransaction, {
           fee: fee.toPrecision(),
           change: change.toPrecision(),
-          balance: balance.toPrecision()
+          balance: balance.toPrecision(),
+          title: self.userTransactionTitle(userTransaction),
+          messageText: self.userTransactionMessageText(userTransaction, amount),
+          profilePhotoUrl: self.userTransactionProfilePhotoUrl(userTransaction)
         });
+        let ignorableValue = (e: any) => {
+          return _.isNil(e) ||
+            ((_.isArray(e) || _.isObject(e)) && _.isEmpty(e)) ||
+            (_.isString(e) && _.isEmpty(_.trim(e)));
+        };
+        userTransaction = _.omitBy(userTransaction, ignorableValue);
 
         self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
           if (snapshot.exists()) {
             // if a pending userTransaction was already created by the app,
             // make sure we don't overwrite certain fields
-            let existingUserTransaction = snapshot.val();
-            _.merge(userTransaction, _.pick(existingUserTransaction, [
+            let existingValues = _.pick(snapshot.val(), [
               'createdAt',
               'createdBy',
-              'receiver',
               'sender',
+              'receiver',
               'type',
-              'message'
-            ]));
+              'title',
+              'messageText'
+            ]);
+            existingValues = _.omitBy(existingValues, ignorableValue);
+            _.merge(userTransaction, existingValues);
           }
 
           self.saveUserTransaction(userTransaction, addressToUserMapping, userId).then(() => {
@@ -371,20 +399,27 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
   private userTransactionAmount(urTransaction: any, addressToUserMapping: any, userId: string): BigNumber {
     if (this.isAnnouncementTransaction(urTransaction)) {
-      let balanceChanges = this.getBalanceChangesFromAnnouncementTransaction(urTransaction);
-      if (balanceChanges === undefined) {
-        return undefined;
-      }
-      let amount: BigNumber = _.find(balanceChanges, (_, addr) => {
-        let user: any = addressToUserMapping[addr];
+      let change: any = _.find(this.announcementTransactionBalanceChanges(urTransaction), (change) => {
+        let user: any = addressToUserMapping[change.to];
         return user && user.userId == userId;
-      }) as BigNumber;
-      return amount;
+      });
+      return change ? change.amount : undefined;
     } else {
       return new BigNumber(urTransaction.value);
     }
   }
 
+  private userTransactionLevel(urTransaction: any, addressToUserMapping: any, userId: string): number {
+    if (this.isAnnouncementTransaction(urTransaction)) {
+      let level: number = _.findIndex(this.announcementTransactionBalanceChanges(urTransaction), (change, index) => {
+        let user: any = addressToUserMapping[change.to];
+        return user && user.userId == userId;
+      });
+      return level;
+    } else {
+      return undefined;
+    }
+  }
 
   private lookupUsersByAddresses(addresses: string[]): Promise<any> {
     let self = this;
@@ -455,7 +490,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
-  private getBalanceChangesFromAnnouncementTransaction(announcementTransaction: any): any {
+  private announcementTransactionBalanceChanges(announcementTransaction: any): any[] {
+    if (this.priorHash === announcementTransaction.hash) {
+      return this.priorChanges;
+    }
+
+    let changes: any[] = [];
     let rewards = [
       new BigNumber("2000000000000000000000"),
       new BigNumber("60600000000000000000"),
@@ -466,10 +506,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       new BigNumber("484840000000000000000"),
       new BigNumber("787910000000000000000")
     ];
-    let changes: any = {};
     let urTransaction: any = announcementTransaction;
     for (let index: number = 0; index < 8; index++) {
-      changes[urTransaction.to] = rewards[index];
+      changes.push({ to: urTransaction.to, amount: rewards[index] });
       urTransaction = this.referralTransaction(urTransaction);
       if (urTransaction === undefined) {
         return undefined;
@@ -479,6 +518,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         break;
       }
     }
+
+    // save results in case the next call is for the same transaction
+    this.priorHash = announcementTransaction.hash;
+    this.priorChanges = changes;
+
     return changes;
   }
 
