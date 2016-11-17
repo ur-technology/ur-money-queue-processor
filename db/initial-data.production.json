@@ -1,0 +1,133 @@
+{
+	"identityAnnouncementQueue": {
+		"specs": {
+			"announce_identity": {
+				"error_state": "error",
+				"in_progress_state": "processing",
+				"retries": 5,
+				"timeout": 120000
+			}
+		}
+	},
+	"identityVerificationQueue": {
+		"specs": {
+			"verify_identity": {
+				"error_state": "error",
+				"finished_state": "finished",
+				"in_progress_state": "processing",
+				"retries": 5,
+				"timeout": 120000
+			}
+		}
+	},
+	"invitationQueue": {
+		"specs": {
+			"process_invitation": {
+				"error_state": "error",
+				"in_progress_state": "processing",
+				"retries": 5,
+				"timeout": 120000
+			}
+		}
+	},
+	"phoneAuthenticationQueue": {
+		"specs": {
+			"code_generation": {
+				"error_state": "code_generation_error",
+				"finished_state": "code_generation_completed_and_sms_sent",
+				"in_progress_state": "code_generation_in_progress",
+				"timeout": 15000
+			},
+			"code_matching": {
+				"error_state": "code_matching_error",
+				"finished_state": "code_matching_completed",
+				"in_progress_state": "code_matching_in_progress",
+				"start_state": "code_matching_requested",
+				"timeout": 15000
+			}
+		}
+	},
+	"phoneLookupQueue": {
+		"specs": {
+			"phone_lookup": {
+				"error_state": "error",
+				"finished_state": "finished",
+				"in_progress_state": "in_progress",
+				"timeout": 30000
+			}
+		}
+	},
+	"urTransactionImportQueue": {
+		"specs": {
+			"import": {
+				"error_state": "error",
+				"in_progress_state": "processing",
+				"retries": 5,
+				"start_state": "ready_to_import",
+				"timeout": 120000
+			},
+			"wait": {
+				"error_state": "error",
+				"in_progress_state": "waiting",
+				"retries": 5,
+				"start_state": "ready_to_wait",
+				"timeout": 120000
+			}
+		}
+	},
+	"users": {
+		"-KJnRTuL8A1ZdfVvwAbv": {
+			"admin": true,
+			"createdAt": 1465446952757,
+			"downlineLevel": 1,
+			"downlineUsers": {
+				"-KJn47TvHAlfQocDX_ES": {
+					"name": "Eiland Glover",
+					"profilePhotoUrl": "https://dummyimage.com/100x100/DD4747/FFFFFF&text=XX"
+				}
+			},
+			"firstName": "John",
+			"lastName": "Reitano",
+			"name": "John Reitano",
+			"phone": "+16196746211",
+			"profilePhotoUrl": "https://dummyimage.com/100x100/ED6D54/FFFFFF&text=JR"
+		},
+		"-KJn47TvHAlfQocDX_ES": {
+			"admin": true,
+			"createdAt": 1465440831526,
+			"downlineLevel": 2,
+			"downlineUsers": {
+				"-KV87tx6gE9kVemBCGyy": {
+					"name": "Justin Williams",
+					"profilePhotoUrl": "https://dummyimage.com/100x100/FFE559/FFFFFF&text=JW"
+				}
+			},
+			"firstName": "Howard",
+			"lastName": "Glover",
+			"middleName": "Eiland",
+			"name": "Eiland Glover",
+			"phone": "+16158566616",
+			"profilePhotoUrl": "https://dummyimage.com/100x100/ED6D54/FFFFFF&text=EG",
+			"sponsor": {
+				"name": "John Reitano",
+				"profilePhotoUrl": "https://dummyimage.com/100x100/ED6D54/FFFFFF&text=JR",
+				"userId": "-KJnRTuL8A1ZdfVvwAbv"
+			}
+		},
+		"-KV87tx6gE9kVemBCGyy": {
+			"createdAt": 1477638856600,
+			"downlineLevel": 3,
+			"firstName": "Justin",
+			"lastName": "Williams",
+			"middleName": "",
+			"name": "Justin Williams",
+			"phone": "+16199344518",
+			"profilePhotoUrl": "https://dummyimage.com/100x100/FFE559/FFFFFF&text=JW",
+			"sponsor": {
+				"name": "Eiland Glover",
+				"profilePhotoUrl": "https://dummyimage.com/100x100/ED6D54/FFFFFF&text=EG",
+				"userId": "-KJn47TvHAlfQocDX_ES"
+			}
+		}
+	}
+}
