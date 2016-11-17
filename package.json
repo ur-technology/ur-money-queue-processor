@@ -15,7 +15,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node build/main.js",
-    "debug": "./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node-debug --web-host=0.0.0.0 build/main.js",
+    "debug": "killall -9 node; ./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node-debug --web-host=0.0.0.0 build/main.js",
     "postinstall": "./node_modules/.bin/typings install"
   },
   "author": "",
@@ -24,7 +24,6 @@
     "bignumber.js": "^2.4.0",
     "dotenv": "^2.0.0",
     "ethereumjs-tx": "^1.1.2",
-    "firebase": "^3.3.0",
     "firebase-queue": "^1.5.0",
     "is-there": "^4.3.3",
     "keythereum": "^0.2.6",
@@ -35,6 +34,7 @@
     "promise-sequence": "^0.2.2",
     "request": "^2.74.0",
     "restler": "^3.4.0",
+    "sendgrid": "^4.7.1",
     "sprintf-js": "^1.0.3",
     "throng": "^4.0.0",
     "twilio": "^2.9.1",

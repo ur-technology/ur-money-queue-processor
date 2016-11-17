@@ -9,7 +9,7 @@ import {ChatQueueProcessor} from './chat';
 import {IdentityVerificationQueueProcessor} from './identity_verification';
 import {IdentityAnnouncementQueueProcessor} from './identity_announcement';
 import {InvitationQueueProcessor} from './invitation';
-import {PhoneAuthenticationQueueProcessor} from './phone_authentication';
+import {AuthenticationQueueProcessor} from './authentication';
 import {PhoneLookupQueueProcessor} from './phone_lookup';
 import {UrTransactionImportQueueProcessor} from './ur_transaction_import';
 
@@ -31,7 +31,7 @@ let queueProcessors = _.map([
   IdentityVerificationQueueProcessor,
   IdentityAnnouncementQueueProcessor,
   InvitationQueueProcessor,
-  PhoneAuthenticationQueueProcessor,
+  AuthenticationQueueProcessor,
   PhoneLookupQueueProcessor,
   UrTransactionImportQueueProcessor
 ], (queueProcessorClass) => {

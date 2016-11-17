@@ -129,7 +129,6 @@ export class QueueProcessor {
         text: text
       });
     });
-
   }
 
   private fixUserData() {
@@ -145,8 +144,7 @@ export class QueueProcessor {
         }
       });
     });
-  };
-
+  }
 
   private traverseObject(parentPath: string, object: any, callback: any) {
     _.forEach(object, (value, key) => {
@@ -159,9 +157,19 @@ export class QueueProcessor {
   }
 
   lookupUsersByPhone(phone: string): Promise<any[]> {
+    let ref = this.db.ref("/users").orderByChild("phone").equalTo(phone);
+    return this.lookupUsers(ref);
+  }
+
+  lookupUsersByEmail(email: string): Promise<any[]> {
+    let ref = this.db.ref("/users").orderByChild("email").equalTo(email);
+    return this.lookupUsers(ref);
+  }
+
+  lookupUsers(ref: any): Promise<any[]> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.db.ref("/users").orderByChild("phone").equalTo(phone).once("value", (snapshot: firebase.database.DataSnapshot) => {
+      ref.once("value", (snapshot: firebase.database.DataSnapshot) => {
 
         // sort matching users with most completely signed up users first
         let userMapping = snapshot.val() || {};
@@ -177,6 +185,7 @@ export class QueueProcessor {
       });
     });
   };
+
 
   lookupUserById(userId: string): Promise<any> {
     let self = this;

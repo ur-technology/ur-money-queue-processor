@@ -42,7 +42,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
         self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
-      }, 5 * 1000);
+      }, 300 * 1000);
     });
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
@@ -87,7 +87,8 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         if (snapshot.exists()) {
           resolve();
         } else {
-          tasksRef.child(1).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+          let startingBlock = QueueProcessor.env.UR_TRANSACTION_IMPORT_STARTING_BLOCK_NUMBER || 1;
+          tasksRef.child(startingBlock).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
             resolve();
           }, (error: string) => {
             reject(error);
