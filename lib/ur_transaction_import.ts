@@ -42,7 +42,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
         self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
-      }, 3 * 1000);
+      }, 300 * 1000);
     });
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
