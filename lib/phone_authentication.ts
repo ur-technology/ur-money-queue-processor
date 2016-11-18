@@ -30,13 +30,6 @@ export class PhoneAuthenticationQueueProcessor extends QueueProcessor {
     let codeGenerationOptions = { 'specId': 'code_generation', 'numWorkers': 1, sanitize: false };
     let codeGenerationQueue = new self.Queue(queueRef, codeGenerationOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(codeGenerationQueue, task);
-
-      if (!this.isCountrySupported(task.countryCode)) {
-        task._new_state = "code_generation_canceled_because_user_from_not_supported_country";
-        self.resolveTask(codeGenerationQueue, task, resolve, reject);
-        return;
-      }
-
       self.lookupUsersByPhone(task.phone).then((matchingUsers) => {
 
         if (_.isEmpty(matchingUsers)) {
