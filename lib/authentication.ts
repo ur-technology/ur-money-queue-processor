@@ -55,11 +55,10 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
 
       self.db.ref(`/emailAuthCodeMatchingQueue/${task._id}`).once('value').then((snapshot: firebase.database.DataSnapshot) => {
 
-        // if the user just authenticated his email, we can already have
+        // if the user just authenticated his email, we already have
         // the userId of an user who was inivited via prefinery
         let parentTask = snapshot.val();
-        if (parentTask && parentTask.emailAuthenticated) {
-          task.emailAuthenticated = true;
+        if (parentTask && parentTask.userId) {
           task.userId = parentTask.userId;
           self.sendSmsAuthenticationCode(task.phone).then((smsAuthenticationCode: string) => {
             task.smsAuthenticationCode = smsAuthenticationCode;
@@ -123,10 +122,10 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           return;
         }
 
-        task.submittedSmsAuthenticationCode = parentTask.smsAuthenticationCode;
+        task.smsAuthenticationCodeSubmittedByUser = parentTask.smsAuthenticationCode;
         task.phone = parentTask.phone;
-        if (parentTask.emailAuthenticated) {
-          task.emailAuthenticated = parentTask.emailAuthenticated;
+        if (parentTask.userId) {
+          task.userId = parentTask.userId;
         }
 
         let codeMatch = task.smsAuthenticationCode == task.submittedSmsAuthenticationCode || (task.phone == '+16199344518' && task.submittedSmsAuthenticationCode == '923239');
@@ -137,7 +136,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         } else {
           log.debug(`submittedSmsAuthenticationCode ${task.submittedSmsAuthenticationCode} does not match actual smsAuthenticationCode ${task.smsAuthenticationCode}`);
         }
-        let newPhone: string = codeMatch && task.emailAuthenticated ? task.phone : undefined;
+        let newPhone: string = codeMatch && task.userId ? task.phone : undefined;
         return self.updateUserLoginCountAndPhone(task.userId, false, newPhone);
       }).then(() => {
         task._new_state = 'completed';
@@ -154,7 +153,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     let options = { 'specId': 'code_generation', 'numWorkers': 1, sanitize: false };
     let queueRef = self.db.ref('/emailAuthCodeGenerationQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
-      // self.startTask(queue, task);
+      self.startTask(queue, task);
       // delete task.userId;
       //
       // self.lookupUsersByEmail(task.email).then((matchingUsers) => {
@@ -197,7 +196,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     let options = { 'specId': 'code_matching', 'numWorkers': 1, 'sanitize': false };
     let queueRef = self.db.ref('/emailAuthCodeMatchingQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
-      // self.startTask(queue, task);
+      self.startTask(queue, task);
       //
       // let codeMatch = task.submittedEmailAuthenticationCode == task.emailAuthenticationCode;
       // if (codeMatch) {
@@ -211,8 +210,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
       //   return firebase.database().ref(`/smsAuthenticationQueue/tasks/${task._id}`).set({
       //     email: task.email,
       //     userId: task.userId,
-      //     emailAuthenticated: codeMatch,
-      //     _state: 'email_authentication_completed'
+      //     _state: 'completed'
       //   });
       // }).then(() => {
       //   task.result = { codeMatch: codeMatch };
