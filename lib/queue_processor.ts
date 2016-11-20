@@ -82,24 +82,30 @@ export class QueueProcessor {
     return `${user.firstName || ""} ${user.middleName || ""} ${user.lastName || ""}`.trim().replace(/  /, " ");
   }
 
-  startTask(queue: any, task: any) {
-    log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - started`);
+  startTask(queue: any, task: any, suppressLogging?: boolean) {
+    if (!suppressLogging) {
+      log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - started`);
+    }
   }
 
-  resolveTask(queue: any, task: any, resolve: any, reject: any) {
+  resolveTask(queue: any, task: any, resolve: any, reject: any, suppressLogging?: boolean) {
     if (this.containsUndefinedValue(task)) {
-      this.rejectTask(queue, task, `undefined value in object ${JSON.stringify(task)}`, reject);
+      this.rejectTask(queue, task, `undefined value in object ${JSON.stringify(task)}`, reject, suppressLogging);
     } else {
-      if (!queue.specId) {
-        log.info(`specId not defined!`);
+      if (!suppressLogging) {
+        if (!queue.specId) {
+          log.info(`specId not defined!`);
+        }
+        log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - resolved`);
       }
-      log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - resolved`);
       resolve(task);
     }
   }
 
-  rejectTask(queue: any, task: any, error: any, reject: any) {
-    log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - rejected - error: ${error}`);
+  rejectTask(queue: any, task: any, error: any, reject: any, suppressLogging?: boolean) {
+    if (!suppressLogging) {
+      log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - rejected - error: ${error}`);
+    }
     reject(error);
   }
 

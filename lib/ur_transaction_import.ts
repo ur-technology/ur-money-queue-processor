@@ -38,41 +38,41 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
     let waitOptions = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
     let waitQueue = new self.Queue(queueRef, waitOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(waitQueue, task);
+      self.startTask(waitQueue, task, true);
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
-        self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject);
-      }, 300 * 1000);
+        self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject, true);
+      }, 3 * 1000);
     });
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(importQueue, task);
+      self.startTask(importQueue, task, true);
       let blockNumber: number = parseInt(task._id);
       self.eth = QueueProcessor.web3().eth;
       if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject);
+        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject, true);
         return;
       }
 
       let lastMinedBlockNumber = self.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         // let's wait for more blocks to get mined
-        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
+        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject, true);
         return;
       }
 
       self.importUrTransactions(blockNumber).then(() => {
         // queue another task to import the next block
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-          self.resolveTask(importQueue, task, resolve, reject);
+          self.resolveTask(importQueue, task, resolve, reject, true);
         }, (error: string) => {
           log.warn(`unable to add task for next block to queue: ${error}`)
-          self.resolveTask(importQueue, task, resolve, reject);
+          self.resolveTask(importQueue, task, resolve, reject, true);
         });
       }, (error) => {
         log.warn(`unable to import transactions for block ${blockNumber}: ${error}`);
-        self.rejectTask(importQueue, task, error, reject);
+        self.rejectTask(importQueue, task, error, reject, true);
       });
     });
     return [waitQueue, importQueue];
