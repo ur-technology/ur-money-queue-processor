@@ -34,7 +34,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       let toAddress: string;
       self.lookupUserNeedingAnnouncementTransaction(userId).then((user: any) => {
         toAddress = user.wallet.address;
-        return self.lookupSponsorAnnouncementTransaction(user.sponsor);
+        return self.lookupSponsorAnnouncementTransaction(user);
       }).then((sponsorAnnouncementTransaction: any) => {
         return self.buildAnnouncementTransaction(toAddress, sponsorAnnouncementTransaction);
       }).then((announcementTransaction) => {
@@ -68,31 +68,27 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     });
   }
 
-  private lookupSponsorAnnouncementTransaction(sponsorInfo: any): Promise<any> {
+  private lookupSponsorAnnouncementTransaction(user: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      if (!sponsorInfo) {
+      if (user.phone === '+16196746211') { // top-level user needs no wallet
         resolve(undefined);
         return;
-      }
-
-      if (!sponsorInfo.userId) {
+      } else if (!user.sponsor || !user.sponsor.userId) {
         reject('No sponsor user id available');
         return;
       }
 
-      self.lookupUserById(sponsorInfo.userId).then((sponsor: any) => {
+      self.lookupUserById(user.sponsor.userId).then((sponsor: any) => {
         if (!sponsor) {
           reject('Could not find associated sponsor');
-          return;
-        }
-
-        if (!sponsor.wallet || !sponsor.wallet.announcementTransaction || !sponsor.wallet.announcementTransaction.blockNumber || !sponsor.wallet.announcementTransaction.hash) {
+        } else if (sponsor.disabled) {
+          reject('Sponsor is disabled');
+        } else if (!sponsor.wallet || !sponsor.wallet.announcementTransaction || !sponsor.wallet.announcementTransaction.blockNumber || !sponsor.wallet.announcementTransaction.hash) {
           reject('Could not find complete announcementTransaction for sponsor');
-          return;
+        } else {
+          resolve(sponsor.wallet.announcementTransaction);
         }
-
-        resolve(sponsor.wallet.announcementTransaction);
       }, (error) => {
         reject(error);
       });
