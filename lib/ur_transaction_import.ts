@@ -57,6 +57,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
       let lastMinedBlockNumber = self.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
+        if (blockNumber - lastMinedBlockNumber > 1) {
+          log.warn(`ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
+        }
         // let's wait for more blocks to get mined
         self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject, true);
         return;
