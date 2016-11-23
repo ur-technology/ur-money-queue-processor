@@ -220,7 +220,8 @@ export class QueueProcessor {
         'verification-succeeded',
         'announcement-requested',
         'announcement-failed',
-        'announcement-succeeded'
+        'announcement-initiated',
+        'announcement-confirmed'
       ], this.registrationStatus(user));
   }
 

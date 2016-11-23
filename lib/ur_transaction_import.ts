@@ -191,7 +191,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }).then(() => {
           return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
         }).then(() => {
-          return self.updateWalletIfIsAnnouncmentTransaction(userTransaction.urTransaction, addressToUserMapping, userId);
+          return self.recordAnnouncementInfoIfApplicable(userTransaction.urTransaction, addressToUserMapping, userId);
         }).then(() => {
           resolve();
         }, (error: string) => {
@@ -203,14 +203,17 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
-  private updateWalletIfIsAnnouncmentTransaction(urTransaction: any, addressToUserMapping: any, userId: string): Promise<any> {
+  private recordAnnouncementInfoIfApplicable(urTransaction: any, addressToUserMapping: any, userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       let toUser: any = addressToUserMapping[urTransaction.to];
-      if (toUser && toUser.userId == userId && self.isAnnouncementTransaction(urTransaction)) {
-        self.db.ref(`/users/${userId}/wallet/announcementTransaction`).set(
-          _.pick(urTransaction, ['blockNumber', 'hash'])
-        ).then(() => {
+      if (toUser && toUser.userId === userId && self.isAnnouncementTransaction(urTransaction)) {
+        let attrs = _.pick(urTransaction, ['blockNumber', 'hash']);
+        self.db.ref(`/users/${userId}/wallet/announcementTransaction`).set(attrs).then(() => {
+          return self.db.ref(`/users/${userId}/registration/status`).set('announcement-confirmed');
+        }).then(() => {
+          return self.markSponsorAnnouncementOfDownlineAsConfirmed(userId);
+        }).then(() => {
           resolve();
         }, (error: any) => {
           reject(error);
@@ -218,6 +221,37 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       } else {
         resolve();
       }
+    });
+  }
+
+  private markSponsorAnnouncementOfDownlineAsConfirmed(userId: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.db.ref('/users').orderByChild('sponsor/userId').equalTo(userId).once('value').then((snapshot: firebase.database.DataSnapshot) => {
+        let downlineUsersMapping = snapshot.val() || {};
+        let numRecordsRemaining = _.size(downlineUsersMapping);
+        if (numRecordsRemaining === 0) {
+          resolve();
+          return;
+        }
+        let finalized = false;
+        _.each(downlineUsersMapping, (downlineUser, downlineUserId) => {
+          self.db.ref(`/users/${downlineUserId}/sponsor`).set({announcementTransactionConfirmed: true}).then(() => {
+            numRecordsRemaining--;
+            if (!finalized && numRecordsRemaining == 0) {
+              finalized = true;
+              resolve();
+            }
+          }, (error: any) => {
+            if (!finalized) {
+              finalized = true;
+              reject(error);
+            }
+          });
+        });
+      }, (error: any) => {
+        reject(error);
+      });
     });
   }
 

@@ -101,8 +101,6 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       let address = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS;
       let password = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD;
       let val: any;
-      log.info(`***address=${address}`);
-      log.info(`***password=${password}`);
       try {
         val = QueueProcessor.web3().personal.unlockAccount(address, password, 1000);
       } catch(error) {
@@ -114,7 +112,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       registrationRef.update({ status: "announcement-requested" });
       self.eth.sendTransaction(announcementTransaction, (error: string, announcementTransactionHash: string) => {
         registrationRef.update({
-          status: error ? "announcement-failed" : "announcement-succeeded",
+          status: error ? "announcement-failed" : "announcement-initiated",
           announcementFinalizedAt: firebase.database.ServerValue.TIMESTAMP
         });
         if (error) {
