@@ -45,16 +45,6 @@ export class InvitationQueueProcessor extends QueueProcessor {
             return;
           }
 
-          if (!sponsor.wallet || !sponsor.wallet.address || !sponsor.wallet.announcementTransaction.hash || !sponsor.wallet.announcementTransaction.blockNumber) {
-            self.rejectTask(queue, task, `Canceling invitation because sponsor lacks properly configured wallet`, reject);
-            return;
-          }
-
-          if (sponsor.invitesDisabled) {
-            self.rejectTask(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
-            return;
-          }
-
           if (!sponsor.downlineLevel) {
             log.warn('sponsor lacks a downline level');
           }
