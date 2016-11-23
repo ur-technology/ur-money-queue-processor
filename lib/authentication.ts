@@ -272,7 +272,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     return new Promise((resolve, reject) => {
       let sendGrid = require('sendgrid')(QueueProcessor.env.SEND_GRID_API_KEY);
       let helper = require('sendgrid').mail;
-      let fromEmail = new helper.Email('develop@ur.technology', 'UR Technology');
+      let fromEmail = new helper.Email('support@ur.technology', 'UR Technology');
       let toEmail = new helper.Email(email);
       let content = new helper.Content('text/plain', messageText);
       let mail = new helper.Mail(fromEmail, subject, toEmail, content);
