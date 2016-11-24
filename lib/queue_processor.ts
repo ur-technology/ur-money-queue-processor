@@ -94,7 +94,7 @@ export class QueueProcessor {
     } else {
       if (!suppressLogging) {
         if (!queue.specId) {
-          log.info(`specId not defined!`);
+          log.info(`  specId not defined!`);
         }
         log.info(`task ${queue.tasksRef.path.toString()}/${task._id} with specId ${queue.specId} - resolved`);
       }
@@ -145,7 +145,7 @@ export class QueueProcessor {
       self.traverseObject(`/users/${userId}`, user, (valuePath: string, value: any, key: string) => {
         if (_.isObject(value) && value.firstName && /dummyimage/.test(value.profilePhotoUrl)) {
           let ref = self.db.ref(valuePath);
-          log.info(`about to update value at ${valuePath}, firstName=${value.firstName}`);
+          log.info(`  about to update value at ${valuePath}, firstName=${value.firstName}`);
           ref.update({ profilePhotoUrl: self.generateProfilePhotoUrl(value) });
         }
       });
@@ -204,7 +204,7 @@ export class QueueProcessor {
           resolve(user);
         } else {
           let error = `no user exists at location ${userRef.toString()}`
-          log.warn(error);
+          log.warn('  ' + error);
           reject(error);
         }
       });

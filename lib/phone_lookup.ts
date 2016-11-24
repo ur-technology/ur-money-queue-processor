@@ -10,7 +10,7 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
         "in_progress_state": "in_progress",
         "finished_state": "finished",
         "error_state": "error",
-        "timeout": 30000
+        "timeout": 180000
       })
     ];
   }
@@ -19,11 +19,15 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/phoneLookupQueue");
     let options = { 'specId': 'phone_lookup', 'numWorkers': 1, 'sanitize': false };
-    let Queue = require('firebase-queue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
       task.phones = task.phones || [];
+      if (task.phones.length > 5000) {
+        log.info(`  limiting lookup of ${task.phones.length} phones to first 5000`);
+        task.phones = _.slice(task.phones, 0, 5000);
+      }
       let phonesRemaining = task.phones.length;
+      log.info(`  about to search for ${task.phones.length} phones`);
       let phoneToUserMapping: any = {};
       let finalized = false;
       _.each(task.phones, (phone) => {
@@ -40,9 +44,10 @@ export class PhoneLookupQueueProcessor extends QueueProcessor {
             if (task.result.numMatches > 0) {
               task.result.phoneToUserMapping = phoneToUserMapping;
             }
-            task._state = "finished";
+            log.info(`  found ${task.result.numMatches} matching users`);
+            task._new_state = "finished";
             self.resolveTask(queue, task, resolve, reject);
-            finalized = true
+            finalized = true;
           }
         }, (error) => {
           finalized = true;

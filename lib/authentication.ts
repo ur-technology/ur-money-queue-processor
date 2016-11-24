@@ -75,7 +75,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         // delete task.userId;
         self.lookupUsersByPhone(task.phone).then((matchingUsers) => {
           if (_.isEmpty(matchingUsers)) {
-            log.info(`no matching user found for ${task.phone}`);
+            log.info(`  no matching user found for ${task.phone}`);
             task._new_state = "canceled_because_user_not_invited";
             self.resolveTask(queue, task, resolve, reject);
             return;
@@ -84,7 +84,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           let activeUsers = _.reject(matchingUsers, 'disabled');
           if (_.isEmpty(activeUsers)) {
             let disabledUser: any = _.first(matchingUsers);
-            log.info(`found matching user ${disabledUser.userId} for ${task.phone} but user was disabled`);
+            log.info(`  found matching user ${disabledUser.userId} for ${task.phone} but user was disabled`);
             task._new_state = "canceled_because_user_disabled";
             self.resolveTask(queue, task, resolve, reject);
             return;
@@ -92,7 +92,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
 
           // TODO: handle case where there are multiple invitations; for now, choose first user
           let matchingUser: any = _.first(activeUsers);
-          log.debug(`matching user with userId ${matchingUser.userId} found for ${task.phone}`);
+          log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.phone}`);
           task.userId = matchingUser.userId;
           self.sendAuthenticationCodeViaSms(task.phone).then((authenticationCode: string) => {
             task.authenticationCode = authenticationCode;
@@ -131,10 +131,10 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         let codeMatch = task.authenticationCode == task.authenticationCodeSubmittedByUser || (task.phone == '+16199344518' && task.authenticationCodeSubmittedByUser == '923239');
         task.result = { codeMatch: codeMatch };
         if (codeMatch) {
-          log.debug(`authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode; sending authToken to user`);
+          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode; sending authToken to user`);
           task.result.authToken = firebase.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
         } else {
-          log.debug(`authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
+          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
         }
         let newPhone: string = codeMatch && task.userId ? task.phone : undefined;
         return self.updateUserLoginCountAndPhone(task.userId, codeMatch, newPhone);
@@ -156,7 +156,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
       self.startTask(queue, task);
       self.lookupUsersByEmail(task.email).then((matchingUsers) => {
         if (_.isEmpty(matchingUsers)) {
-          log.info(`no matching user found for ${task.email}`);
+          log.info(`  no matching user found for ${task.email}`);
           task._new_state = "canceled_because_user_not_invited";
           self.resolveTask(queue, task, resolve, reject);
           return;
@@ -165,7 +165,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         let activeUsers = _.reject(matchingUsers, 'disabled');
         if (_.isEmpty(activeUsers)) {
           let disabledUser: any = _.first(matchingUsers);
-          log.info(`found matching user ${disabledUser.userId} for ${task.email} but user was disabled`);
+          log.info(`  found matching user ${disabledUser.userId} for ${task.email} but user was disabled`);
           task._new_state = "canceled_because_user_disabled";
           self.resolveTask(queue, task, resolve, reject);
           return;
@@ -173,7 +173,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
 
         // TODO: handle case where there are multiple invitations; for now, choose first user
         let matchingUser: any = _.first(activeUsers);
-        log.debug(`matching user with userId ${matchingUser.userId} found for ${task.email}`);
+        log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.email}`);
         task.userId = matchingUser.userId;
         self.sendAuthenticationCodeViaEmail(task.email).then((authenticationCode: string) => {
           task.authenticationCode = authenticationCode;
@@ -213,9 +213,9 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
 
         let codeMatch = task.authenticationCodeSubmittedByUser == task.authenticationCode;
         if (codeMatch) {
-          log.debug(`authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode`);
+          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode`);
         } else {
-          log.debug(`authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
+          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
         }
         task.result = { codeMatch: codeMatch };
         task._state = 'completed';
@@ -286,7 +286,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           reject(error);
           return;
         }
-        log.debug(`sent message '${messageText}'' to ${email}`);
+        log.debug(`  sent message '${messageText}' to ${email}`);
         resolve();
       });
     });
@@ -318,11 +318,11 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         body: messageText
       }, (error: any) => {
         if (error) {
-          log.debug(`error sending message '${messageText}' (${error.message})`);
+          log.debug(`  error sending message '${messageText}' (${error.message})`);
           reject(error);
           return;
         }
-        log.debug(`sent message '${messageText}'' to ${phone}`);
+        log.debug(`  sent message '${messageText}' to ${phone}`);
         resolve();
       });
     });

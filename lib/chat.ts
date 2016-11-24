@@ -27,7 +27,7 @@ export class ChatQueueProcessor extends QueueProcessor {
           let chatSummaryCopy: any = _.extend(chatSummary, { displayUserId: chatSummary.creatorUserId });
           let destinationRef = self.db.ref(`/users/${otherUserId}/chatSummaries/${task.chatId}`);
           destinationRef.set(chatSummaryCopy);
-          log.trace(`copied chatSummary to ${destinationRef.toString()}`);
+          log.trace(`  copied chatSummary to ${destinationRef.toString()}`);
         });
         self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
@@ -52,14 +52,14 @@ export class ChatQueueProcessor extends QueueProcessor {
             let messageCopy: any = _.clone(message);
             let destinationRef = self.db.ref(`/users/${otherUserId}/chats/${task.chatId}/messages/${task.messageId}`);
             destinationRef.set(messageCopy);
-            log.trace(`copied message to ${destinationRef.toString()}`);
+            log.trace(`  copied message to ${destinationRef.toString()}`);
 
             // copy message to chat summary of other user unless the this is the first message in the chat
             // summary, in which case the chat summary already contains this message
             if (!task.isFirstMessageInChat) {
               let destinationRef = self.db.ref(`/users/${otherUserId}/chatSummaries/${task.chatId}/lastMessage`);
               destinationRef.set(_.merge(message, { messageId: task.messageId }));
-              log.trace(`copied message to ${destinationRef.toString()}`);
+              log.trace(`  copied message to ${destinationRef.toString()}`);
             }
 
             // create event for other user
@@ -97,7 +97,7 @@ export class ChatQueueProcessor extends QueueProcessor {
           resolve(chatSummary);
         } else {
           let error = `no chat summary exists at location ${chatSummaryRef.toString()}`
-          log.warn(error);
+          log.warn('  ' + error);
           reject(error);
         }
       });

@@ -58,7 +58,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let lastMinedBlockNumber = self.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
         if (blockNumber - lastMinedBlockNumber > 1) {
-          log.warn(`ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
+          log.warn(`  ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
         }
         // let's wait for more blocks to get mined
         self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject, true);
@@ -70,11 +70,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
           self.resolveTask(importQueue, task, resolve, reject, true);
         }, (error: string) => {
-          log.warn(`unable to add task for next block to queue: ${error}`)
+          log.warn(`  unable to add task for next block to queue: ${error}`)
           self.resolveTask(importQueue, task, resolve, reject, true);
         });
       }, (error) => {
-        log.warn(`unable to import transactions for block ${blockNumber}: ${error}`);
+        log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
         self.rejectTask(importQueue, task, error, reject, true);
       });
     });
@@ -122,7 +122,6 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       return new BigNumber(0);
     } else {
       let x: BigNumber = new BigNumber(userTransaction.urTransaction.gasPrice).times(21000)
-      log.trace(x.toPrecision());
       return new BigNumber(userTransaction.urTransaction.gasPrice).times(21000);
     }
   }
@@ -505,7 +504,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
             let priorBalance: BigNumber = new BigNumber(priorTransaction.balance);
             resolve(priorBalance);
           } else {
-            log.debug("no prior balance available - using 0 instead");
+            log.debug('  no prior balance available - using 0 instead');
             resolve(new BigNumber(0));
           }
         } else {
@@ -524,9 +523,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         let userId = _.first(_.keys(users));
         let user = _.first(_.values(users));
         if (userId) {
-          log.trace(`found user ${userId} associated with address ${address}`);
+          log.trace(`  found user ${userId} associated with address ${address}`);
         } else {
-          log.trace(`no user associated with address ${address}`);
+          log.trace(`  no user associated with address ${address}`);
         }
         resolve({ user: user, userId: userId });
       }, (error: string) => {
@@ -573,13 +572,13 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
   private referralTransaction(urTransaction: any): any {
     if (!urTransaction.input) {
-      log.warn('sign up transaction lacks input field');
-      log.warn(urTransaction);
+      log.warn('  sign up transaction lacks input field');
+      log.warn('  ' + urTransaction);
       return undefined;
     }
     let version: string = urTransaction.input.slice(2, 4);
     if (version !== "01") {
-      log.warn( 'unrecognized transaction version');
+      log.warn( '  unrecognized transaction version');
       return undefined;
     }
     if (urTransaction.input.length == 4) {
@@ -591,7 +590,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       if (!this.transactionWrappers[hash]) {
         let fetchedTransaction = this.eth.getTransaction(hash);
         if (!fetchedTransaction) {
-          log.warn( 'unable to fetch transaction');
+          log.warn( '  unable to fetch transaction');
           return undefined;
         }
         this.discardExcessiveTransactionWrappers();
@@ -603,7 +602,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }
       return this.transactionWrappers[hash].transaction;
     } else {
-      log.warn(`unexpected transaction input length ${urTransaction.input}`);
+      log.warn(`  unexpected transaction input length ${urTransaction.input}`);
       return undefined;
     }
   }

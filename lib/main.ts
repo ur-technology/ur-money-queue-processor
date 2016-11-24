@@ -51,8 +51,8 @@ process.on('SIGTERM', () => {
   log.info(`Exiting...`);
   let shutdownPromises: Promise<any>[] = _.map(queues, (queue) => { return queue.shutdown(); });
   Promise.all(shutdownPromises).then(values => {
-    console.log(values);
-    console.log('Finished shutting down all queues');
+    log.info(values);
+    log.info('Finished shutting down all queues');
     process.exit(0);
   });
 });

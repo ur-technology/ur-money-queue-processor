@@ -46,9 +46,8 @@ export class InvitationQueueProcessor extends QueueProcessor {
           }
 
           if (!sponsor.downlineLevel) {
-            log.warn('sponsor lacks a downline level');
+            log.warn('  sponsor lacks a downline level');
           }
-
 
           // add new user to users list
           let newUser: any = {
@@ -72,7 +71,7 @@ export class InvitationQueueProcessor extends QueueProcessor {
           let newUserId = newUserRef.key;
           let sponsorRef = self.db.ref(`/users/${task.sponsorUserId}`);
           sponsorRef.child(`downlineUsers/${newUserId}`).set({ name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl });
-          log.debug(`processed invitation of ${newUserId} (${newUser.name}) by ${task.sponsorUserId}`);
+          log.debug(`  processed invitation of ${newUserId} (${newUser.name}) by ${task.sponsorUserId}`);
           self.resolveTask(queue, task, resolve, reject);
         });
       }, (error) => {

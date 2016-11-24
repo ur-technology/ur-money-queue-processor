@@ -24,7 +24,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       self.startTask(queue, task);
       let rejected = false;
       function rejectOnce(message: string) {
-        log.error(message);
+        log.error('  ' + message);
         if (!rejected) {
           reject(message);
           rejected = true;
