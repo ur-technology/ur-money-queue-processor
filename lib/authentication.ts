@@ -124,17 +124,17 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           return;
         }
 
-        task.authenticationCodeSubmittedByUser = parentTask.authenticationCode;
+        task.originalAuthenticationCode = parentTask.authenticationCode;
         task.phone = parentTask.phone;
         task.userId = parentTask.userId;
 
-        let codeMatch = task.authenticationCode == task.authenticationCodeSubmittedByUser || (task.phone == '+16199344518' && task.authenticationCodeSubmittedByUser == '923239');
+        let codeMatch = task.authenticationCode == task.originalAuthenticationCode || (task.phone == '+16199344518' && task.authenticationCode == '923239');
         task.result = { codeMatch: codeMatch };
         if (codeMatch) {
-          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode; sending authToken to user`);
+          log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} matches actual authenticationCode; sending authToken to user`);
           task.result.authToken = firebase.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
         } else {
-          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
+          log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
         }
         let newPhone: string = codeMatch && task.userId ? task.phone : undefined;
         return self.updateUserLoginCountAndPhone(task.userId, codeMatch, newPhone);
@@ -204,18 +204,18 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           return;
         }
 
-        task.authenticationCodeSubmittedByUser = parentTask.authenticationCode;
+        task.originalAuthenticationCode = parentTask.authenticationCode;
         task.email = parentTask.email;
         task.userId = parentTask.userId;
 
         return self.updateUserLoginCountAndPhone(task.userId, false, undefined);
       }).then(() => {
 
-        let codeMatch = task.authenticationCodeSubmittedByUser == task.authenticationCode;
+        let codeMatch = task.originalAuthenticationCode == task.authenticationCode;
         if (codeMatch) {
-          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} matches actual authenticationCode`);
+          log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} matches actual authenticationCode`);
         } else {
-          log.debug(`  authenticationCodeSubmittedByUser ${task.authenticationCodeSubmittedByUser} does not match actual authenticationCode ${task.authenticationCode}`);
+          log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
         }
         task.result = { codeMatch: codeMatch };
         task._state = 'completed';
