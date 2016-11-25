@@ -68,11 +68,13 @@ export class QueueProcessor {
         foreground: "FFFFFF"
       }]);
     let initials = 'XX';
-    if (user.firstName) {
-      let firstLetters = user.firstName.match(/\b\w/g);
+    let firstLetters = user.firstName && user.firstName.match(/\b\w/g);
+    if (firstLetters) {
       initials = firstLetters[0];
       let lastNameFirstLetter = (user.lastName || '').match(/\b\w/g);
-      initials = initials + lastNameFirstLetter[0];
+      if (lastNameFirstLetter) {
+        initials = initials + lastNameFirstLetter[0];
+      }
       initials = initials.toUpperCase();
     }
     return "https://dummyimage.com/100x100/" + colorScheme.background + "/" + colorScheme.foreground + "&text=" + initials;
