@@ -81,17 +81,27 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
             return;
           }
 
-          let activeUsers = _.reject(matchingUsers, 'disabled');
-          if (_.isEmpty(activeUsers)) {
-            let disabledUser: any = _.first(matchingUsers);
-            log.info(`  found matching user ${disabledUser.userId} for ${task.phone} but user was disabled`);
+          let matchingUser: any = _.first(matchingUsers);
+          matchingUsers = _.reject(matchingUsers, 'disabled');
+          if (_.isEmpty(matchingUsers)) {
+            log.info(`  found matching user ${matchingUser.userId} for ${task.phone} but user was disabled`);
             task._new_state = "canceled_because_user_disabled";
             self.resolveTask(queue, task, resolve, reject);
             return;
           }
+          matchingUser = _.first(matchingUsers);
+
+          matchingUsers = _.reject(matchingUsers, (u) => { return _.isNumber(u.failedLoginCount) && u.failedLoginCount > 10; });
+          if (_.isEmpty(matchingUsers)) {
+            log.info(`  found matching user ${matchingUser.userId} for ${task.phone} but user login was disallowed because of excessive failed logins`);
+            task._new_state = "canceled_because_user_disabled";
+            // TODO: change this to: canceled_because_of_excessive_failed_logins
+            self.resolveTask(queue, task, resolve, reject);
+            return;
+          }
+          matchingUser = _.first(matchingUsers);
 
           // TODO: handle case where there are multiple invitations; for now, choose first user
-          let matchingUser: any = _.first(activeUsers);
           log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.phone}`);
           task.userId = matchingUser.userId;
           self.sendAuthenticationCodeViaSms(task.phone).then((authenticationCode: string) => {
@@ -235,9 +245,6 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           failedLoginCount: resetFailedLoginCount ? 0 : (user.failedLoginCount || 0) + 1,
           updatedAt: firebase.database.ServerValue.TIMESTAMP
         };
-        if (attrs.failedLoginCount >= 10) {
-          attrs.disabled = true;
-        }
         if (newPhone) {
           attrs.phone = newPhone;
         }

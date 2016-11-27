@@ -52,14 +52,18 @@ export class InvitationQueueProcessor extends QueueProcessor {
           // add new user to users list
           let newUser: any = {
             createdAt: firebase.database.ServerValue.TIMESTAMP,
-            firstName: task.invitee.firstName,
-            middleName: task.invitee.middleName,
-            lastName: task.invitee.lastName,
+            firstName: task.invitee.firstName || '',
+            middleName: task.invitee.middleName || '',
+            lastName: task.invitee.lastName || '',
             phone: task.invitee.phone,
             sponsor: {
               userId: task.sponsorUserId,
               name: sponsor.name,
-              profilePhotoUrl: sponsor.profilePhotoUrl
+              profilePhotoUrl: sponsor.profilePhotoUrl,
+              announcementTransactionConfirmed: !!sponsor.wallet &&
+                !!sponsor.wallet.announcementTransaction &&
+                !!sponsor.wallet.announcementTransaction.blockNumber &&
+                !!sponsor.wallet.announcementTransaction.hash
             },
             downlineLevel: (sponsor.downlineLevel || 0) + 1
           };
