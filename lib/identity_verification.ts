@@ -33,7 +33,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       let userId: string = task.userId;
       self.lookupUserById(userId).then((user: any) => {
         let status = self.registrationStatus(user);
-        if (status !== 'initial') {
+        if ((status !== 'initial') &&  (status !== 'verification-failed') && (status !== 'verification-pending')){
           rejectOnce(`unexpected status ${user.registration.status}`);
           return;
         }
@@ -59,7 +59,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
             rejectOnce(`something went wrong on the client: ${error}`);
             return;
           }
-          let status = verificationData.Record && verificationData.Record.RecordStatus == "match" ? "verification-succeeded": "verification-pending";
+          let status = verificationData.Record && verificationData.Record.RecordStatus == "match" ? "verification-succeeded": "verification-failed";
           registrationRef.update({
             status: status,
             verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
