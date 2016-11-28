@@ -21,63 +21,68 @@ export class InvitationQueueProcessor extends QueueProcessor {
     let options = { 'specId': 'process_invitation', 'numWorkers': 1, 'sanitize': false };
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
+      let newUserId: string = self.db.ref('/users').push().key;
+      let sponsorRef = self.db.ref(`/users/${task.sponsorUserId}`);
       self.lookupUsersByPhone(task.invitee.phone).then((matchingUsers) => {
         let matchingUser: any = _.first(matchingUsers);
         let status = self.registrationStatus(matchingUser);
         if (status !== 'initial') {
-          self.rejectTask(queue, task, `Sorry, ${matchingUser.name} has already responded to an invitation.`, reject);
-          return;
+          return Primose.reject(`Sorry, ${matchingUser.name} has already responded to an invitation.`);
         }
 
-        self.lookupUserById(task.sponsorUserId).then((sponsor: any) => {
-          if (!sponsor) {
-            self.rejectTask(queue, task, "Could not find associated sponsor.", reject);
-            return;
-          }
+        return self.lookupUserById(task.sponsorUserId);
+      }).then((sponsor: any) => {
+        if (!sponsor) {
+          return Promise.reject(`Could not find associated sponsor.`);
+        }
 
-          if (sponsor.disabled) {
-            self.rejectTask(queue, task, `Canceling invitation because sponsor has been disabled`, reject);
-            return;
-          }
+        if (sponsor.disabled) {
+          return Promise.reject(`Canceling invitation because sponsor has been disabled`);
+        }
 
-          if (sponsor.invitesDisabled) {
-            self.rejectTask(queue, task, `Canceling invitation because invites have been disabled for sponsor`, reject);
-            return;
-          }
+        if (sponsor.invitesDisabled) {
+          return Promise.reject(`Canceling invitation because invites have been disabled for sponsor.`);
+        }
 
-          if (!sponsor.downlineLevel) {
-            log.warn('  sponsor lacks a downline level');
-          }
+        if (!sponsor.downlineLevel) {
+          log.warn('  sponsor lacks a downline level');
+        }
 
-          // add new user to users list
-          let newUser: any = {
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-            firstName: task.invitee.firstName || '',
-            middleName: task.invitee.middleName || '',
-            lastName: task.invitee.lastName || '',
-            phone: task.invitee.phone,
-            sponsor: {
-              userId: task.sponsorUserId,
-              name: sponsor.name,
-              profilePhotoUrl: sponsor.profilePhotoUrl,
-              announcementTransactionConfirmed: !!sponsor.wallet &&
-                !!sponsor.wallet.announcementTransaction &&
-                !!sponsor.wallet.announcementTransaction.blockNumber &&
-                !!sponsor.wallet.announcementTransaction.hash
-            },
-            downlineLevel: (sponsor.downlineLevel || 0) + 1
-          };
-          newUser.name = self.fullName(newUser);
-          newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser);
-          let newUserRef = self.db.ref('/users').push(newUser);
-
-          // add new user to sponsor's downline users
-          let newUserId = newUserRef.key;
-          let sponsorRef = self.db.ref(`/users/${task.sponsorUserId}`);
-          sponsorRef.child(`downlineUsers/${newUserId}`).set({ name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl });
-          log.debug(`  processed invitation of ${newUserId} (${newUser.name}) by ${task.sponsorUserId}`);
-          self.resolveTask(queue, task, resolve, reject);
-        });
+        // add new user to users list
+        let newUser: any = {
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          firstName: task.invitee.firstName || '',
+          middleName: task.invitee.middleName || '',
+          lastName: task.invitee.lastName || '',
+          phone: task.invitee.phone,
+          sponsor: {
+            userId: task.sponsorUserId,
+            name: sponsor.name,
+            profilePhotoUrl: sponsor.profilePhotoUrl,
+            announcementTransactionConfirmed: !!sponsor.wallet &&
+              !!sponsor.wallet.announcementTransaction &&
+              !!sponsor.wallet.announcementTransaction.blockNumber &&
+              !!sponsor.wallet.announcementTransaction.hash
+          },
+          downlineLevel: (sponsor.downlineLevel || 0) + 1,
+          downlineSize: 0
+        };
+        newUser.name = self.fullName(newUser);
+        newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser);
+        return self.db.ref(`/users/${newUserId}`).set(newUser);
+      }).then(() => {
+        // add new user to sponsor's downline users
+        return sponsorRef.child(`downlineUsers/${newUserId}`).set({ name: newUser.name, profilePhotoUrl: newUser.profilePhotoUrl });
+      }).then(() => {
+        // get downline size of sponsor...
+        return sponsorRef.child(`downlineSize`).once('value');
+      }).then((snapshot: firebase.database.DataSnapshot) => {
+        // ...and increment it by one.
+        let sponsorDownlineSize: number = _.isNumber(snapshot.val()) ? snapshot.val() : 0;
+        return sponsorRef.child(`downlineSize`).set(sponsorDownlineSize + 1);
+      }).then(() => {
+        log.debug(`  processed invitation of ${newUserId} by ${task.sponsorUserId}`);
+        self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
         self.rejectTask(queue, task, error, reject);
         return;
