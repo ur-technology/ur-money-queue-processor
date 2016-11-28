@@ -33,7 +33,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       let userId: string = task.userId;
       self.lookupUserById(userId).then((user: any) => {
         let status = self.registrationStatus(user);
-        if ((status !== 'initial') &&  (status !== 'verification-failed') && (status !== 'verification-pending')){
+        if (!_.includes['initial', 'verification-failed'], status)) {
           rejectOnce(`unexpected status ${user.registration.status}`);
           return;
         }
