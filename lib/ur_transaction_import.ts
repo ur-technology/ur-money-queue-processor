@@ -238,7 +238,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }
         let finalized = false;
         _.each(downlineUsersMapping, (downlineUser, downlineUserId) => {
-          self.db.ref(`/users/${downlineUserId}/sponsor`).set({announcementTransactionConfirmed: true}).then(() => {
+          self.db.ref(`/users/${downlineUserId}/sponsor`).update({announcementTransactionConfirmed: true}).then(() => {
             numRecordsRemaining--;
             if (!finalized && numRecordsRemaining == 0) {
               finalized = true;
