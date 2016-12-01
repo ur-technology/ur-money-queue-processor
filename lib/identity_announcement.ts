@@ -100,6 +100,8 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     return new Promise((resolve, reject) => {
       let address = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS;
       let password = QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_PASSWORD;
+      log.info(`***address=${address}`);
+      log.info(`***password=${password}`);
       let val: any;
       try {
         val = QueueProcessor.web3().personal.unlockAccount(address, password, 1000);
