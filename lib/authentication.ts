@@ -164,6 +164,12 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     let queueRef = self.db.ref('/emailAuthCodeGenerationQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
+      task.email = _.toLower(_.trim(task.email || ''));
+      if (!task.email) {
+        task._new_state = "canceled_because_user_not_invited";
+        self.resolveTask(queue, task, resolve, reject);
+        return;
+      }
       self.lookupUsersByEmail(task.email).then((matchingUsers) => {
         if (_.isEmpty(matchingUsers)) {
           log.info(`  no matching user found for ${task.email}`);
