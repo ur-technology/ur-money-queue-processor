@@ -56,7 +56,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
         self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject, true);
-      }, 10 * 1000);
+      }, 75 * 1000);
     });
 
 
