@@ -50,6 +50,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       self.importBatchId = self.db.ref("/users").push().key; // HACK to generate unique id
       let delaySeconds = _.isNumber(_.toNumber(task.delaySeconds)) ? _.toNumber(task.delaySeconds) : 0;
       setTimeout(() => {
+        progress(50);
         self.loadCandidatesFromPrefinery(1).then(() => {
           self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_import", delaySeconds: 45 }), resolve, reject, true);
         });
