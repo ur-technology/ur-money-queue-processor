@@ -56,7 +56,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       setTimeout(() => {
         self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject, true);
-      }, 75 * 1000);
+      }, 45 * 1000);
     });
 
 
@@ -74,14 +74,14 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
   };
 
   private showStats() {
-    log.info(`  ${_.size(this.candidates)} total candidates processed`);
+    log.info(`    ${_.size(this.candidates)} total candidates processed`);
     _.each(_.groupBy(this.candidates, 'importStatus'), (group, importStatus) => {
       let suffix = '';
       if (importStatus === 'skipped-for-sponsor-email-lookup-failure') {
         let count = _.size(_.uniq(_.map(group, (c: any) => { return c.prefineryUser && c.prefineryUser.referredBy; })));
         suffix = `(${count} unique sponsor emails)`;
       }
-      log.info(`    ${_.size(group)} candidates ${importStatus} ${suffix}`);
+      log.info(`      ${_.size(group)} candidates ${importStatus} ${suffix}`);
     });
   }
 
@@ -92,8 +92,6 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       self.lookupUserByEmailLoosely(candidate.email).then((matchingUser: any) => {
         if (matchingUser) {
           return Promise.reject('skipped-for-duplicate-email')
-        } else if (_.isEmpty(_.trim((candidate.prefineryUser && candidate.prefineryUser.referredBy) || ''))) {
-          return Promise.reject('skipped-for-missing-sponsor-email');
         } else {
           return self.lookupUserByEmailLoosely(candidate.prefineryUser.referredBy);
         }
@@ -247,7 +245,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       country: prefineryUser.profile.country,
       phone: prefineryUser.profile.telephone,
       referralLink: prefineryUser.profile.http_referrer,
-      referredBy: prefineryUser.referred_by,
+      referredBy: prefineryUser.referred_by || 'unknownuser@ur.technology',
       userReportedCountry: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82186 }) || {}).answer,
       userReportedReferrer: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82178 }) || {}).answer
     };
