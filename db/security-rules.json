@@ -173,6 +173,12 @@
             }
         },
 
+        "prefineryImportQueue": {
+            "tasks": {
+                ".indexOn": "_state"
+            }
+        },
+
         "users": {
             ".indexOn": ["phone", "wallet/address", "email", "sponsor/userId", "registration/status"],
             // allow read or write only if the authenticated user is accessing his own user record
