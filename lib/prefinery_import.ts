@@ -16,13 +16,6 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
         "timeout": 120000,
         "retries": 5
       }),
-      this.ensureQueueSpecLoaded("/prefineryImportQueue/specs/wait", {
-        "start_state": "ready_to_wait",
-        "in_progress_state": "waiting",
-        "error_state": "error",
-        "timeout": 120000,
-        "retries": 5
-      }),
       this.setUpPrefineryImportQueue()
     ];
   }
@@ -36,7 +29,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
         if (snapshot.exists()) {
           return Promise.resolve();
         } else {
-          return tasksRef.child("only-one-task").set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
+          return tasksRef.child("only-one-task").set({ _state: "ready_to_import", delaySeconds: 0, createdAt: firebase.database.ServerValue.TIMESTAMP });
         }
       }).then(() => {
         resolve();
@@ -50,27 +43,20 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/prefineryImportQueue");
 
-    let waitOptions = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
-    let waitQueue = new self.Queue(queueRef, waitOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(waitQueue, task, true);
-      let blockNumber: number = parseInt(task._id);
-      setTimeout(() => {
-        self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject, true);
-      }, 45 * 1000);
-    });
-
-
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(importQueue, task, true);
       self.candidates = {};
       self.importBatchId = self.db.ref("/users").push().key; // HACK to generate unique id
-      self.loadCandidatesFromPrefinery(1).then(() => {
-        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject, true);
-      });
+      let delaySeconds = _.isNumber(_.toNumber(task.delaySeconds)) ? _.toNumber(task.delaySeconds) : 0;
+      setTimeout(() => {
+        self.loadCandidatesFromPrefinery(1).then(() => {
+          self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_import", delaySeconds: 45 }), resolve, reject, true);
+        });
+      }, delaySeconds * 1000);
     });
 
-    return [waitQueue, importQueue];
+    return [importQueue];
   };
 
   private showStats() {
