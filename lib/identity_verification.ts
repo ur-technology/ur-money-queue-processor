@@ -43,7 +43,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": "Basic VVJDYXBpdGFsX0FQSTpOVmhLdDNAVUtZVHJBVlIzWHlR"
+            "Authorization": `Basic ${QueueProcessor.env.TRULIOO_AUTHORIZATION}`
           },
           body: task.verificationArgs,
           json: true
