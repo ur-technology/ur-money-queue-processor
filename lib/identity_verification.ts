@@ -23,55 +23,86 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
       let rejected = false;
-      function rejectOnce(message: string) {
-        log.error('  ' + message);
-        if (!rejected) {
-          reject(message);
-          rejected = true;
-        }
-      }
-      let userId: string = task.userId;
-      self.lookupUserById(userId).then((user: any) => {
-        let status = self.registrationStatus(user);
-        if (!_.includes(['initial', 'verification-failed'], status)) {
-          rejectOnce(`unexpected status ${user.registration.status}`);
+      self.lookupUserById(task.userId).then((user: any) => {
+        if (!user) {
+          self.rejectTask(queue, task, `could not find user with id ${task.userId}`, reject);
           return;
         }
 
-        let options = {
-          url: 'https://api.globaldatacompany.com/verifications/v1/verify',
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Basic ${QueueProcessor.env.TRULIOO_AUTHORIZATION}`
-          },
-          body: task.verificationArgs,
-          json: true
-        };
-        let registrationRef = self.db.ref(`/users/${userId}/registration`);
-        registrationRef.update({
-          status: "verification-requested",
-          verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
-        });
-        var request = require('request');
-        request(options, (error: any, response: any, verificationData: any) => {
-          if (error) {
-            rejectOnce(`something went wrong on the client: ${error}`);
-            return;
-          }
-          let status = verificationData.Record && verificationData.Record.RecordStatus == "match" ? "verification-succeeded": "verification-failed";
-          registrationRef.update({
-            status: status,
-            verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
-            verificationArgs: task.verificationArgs,
-            verificationResult: verificationData.Record
+        let status = self.registrationStatus(user);
+        if (!_.includes(['initial', 'verification-failed', 'verification-payment-failed'], status)) {
+          self.rejectTask(queue, task, `unexpected status ${user.registration.status}`, reject);
+          return;
+        }
+
+        let verifyIdentityAndResolve = () => {
+          self.verifyIdentity(task.userId, task.verificationArgs).then((status: string) => {
+            self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
+          }, (error: any) => {
+            self.rejectTask(queue, task, error, reject);
           });
-          self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
-        });
-      }, (error: any) => {
-        rejectOnce(`could not find user with id ${userId}: ${error}`);
+        };
+
+        if (task.stripeTokenId) {
+          let stripe = require("stripe")("sk_test_6iHyRQYCfUVredh4fK3q0yER");
+          let token = task.stripeTokenId;
+          let charge = stripe.charges.create({
+            amount: 299, // Amount in cents
+            currency: "usd",
+            source: task.stripeTokenId,
+            description: "UR Money ID Verification"
+          }, (error: any, charge: any) => {
+            if (error && error.type === 'StripeCardError') {
+              log.debug(`card declined; stripe error: `, JSON.stringify(error));
+              self.resolveTask(queue, _.merge(task, {result: {status: 'verification-payment-failed'}}), resolve, reject);
+            } else if (error) {
+              log.warn(`error processing payment: ${error}`);
+              self.rejectTask(queue, task, `There was an error processing your payment.`, reject);
+            } else {
+              verifyIdentityAndResolve();
+            }
+          });
+        } else {
+          verifyIdentityAndResolve();
+        }
       });
     });
     return [queue];
+  }
+
+  private verifyIdentity(userId: string, verificationArgs: any): Promise<string> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let registrationRef = self.db.ref(`/users/${userId}/registration`);
+      registrationRef.update({
+        status: "verification-requested",
+        verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
+      });
+      var request = require('request');
+      let options = {
+        url: 'https://api.globaldatacompany.com/verifications/v1/verify',
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${QueueProcessor.env.TRULIOO_BASIC_AUTHORIZATION}`
+        },
+        body: verificationArgs,
+        json: true
+      };
+      request(options, (error: any, response: any, verificationData: any) => {
+        if (error) {
+          reject(`something went wrong on the client: ${error}`);
+          return;
+        }
+        let status = verificationData.Record && verificationData.Record.RecordStatus === "match" ? "verification-succeeded": "verification-failed";
+        registrationRef.update({
+          status: status,
+          verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
+          verificationArgs: verificationArgs,
+          verificationResult: verificationData.Record
+        });
+        resolve(status);
+      });
+    });
   }
 }
