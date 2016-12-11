@@ -146,7 +146,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       // for Mexico, split surname into two fields if necessary
       let p: any = body.DataFields.PersonInfo;
       if (p && p.firstSurName && !p.SecondSurName) {
-        let surnames = (p.FirstSurName || '').split(' ');
+        let surnames = p.FirstSurName.split(' ');
         if (surnames.length > 1) {
           p.FirstSurName = surnames[0];
           p.SecondSurName = _.slice(surnames, 1).join(' ');
