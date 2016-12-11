@@ -161,9 +161,9 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       delete l.Address1;
     }
 
-    if (verificationArgs.IdentificationType === 'Driver License') {
+    if (verificationArgs.IdentificationType === 'DriverLicense') {
       body.DataFields.DriverLicense = verificationArgs.DriverLicense;
-    } else if (verificationArgs.IdentificationType === 'National Id') {
+    } else if (verificationArgs.IdentificationType === 'NationalId') {
       body.DataFields.NationalIds = [verificationArgs.NationalId];
     } else if (verificationArgs.IdentificationType === 'Passport') {
       body.DataFields.Passport = verificationArgs.Passport;
