@@ -4,7 +4,12 @@ import * as log from 'loglevel';
 import {QueueProcessor} from './queue_processor';
 
 export class IdentityVerificationQueueProcessor extends QueueProcessor {
+  stripe: any;
+  request: any;
+
   init(): Promise<any>[] {
+    this.stripe = require("stripe")(QueueProcessor.env.STRIPE_SECRET_KEY);
+    this.request = require('request');
     return [
       this.ensureQueueSpecLoaded("/identityVerificationQueue/specs/verify_identity", {
         "in_progress_state": "processing",
@@ -36,17 +41,16 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         }
 
         let verifyIdentityAndResolve = () => {
-          self.verifyIdentity(task.userId, task.verificationArgs).then((status: string) => {
+          self.verifyIdentity(task.userId, task.verificationArgs, task.version).then((status: string) => {
             self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
           }, (error: any) => {
             self.rejectTask(queue, task, error, reject);
           });
         };
 
-        if (task.stripeTokenId) {
-          let stripe = require("stripe")(QueueProcessor.env.STRIPE_SECRET_KEY);
+        if (task.version === 2) {
           let token = task.stripeTokenId;
-          let charge = stripe.charges.create({
+          let charge = self.stripe.charges.create({
             amount: 299, // Amount in cents
             currency: "usd",
             source: task.stripeTokenId,
@@ -70,7 +74,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     return [queue];
   }
 
-  private verifyIdentity(userId: string, verificationArgs: any): Promise<string> {
+  private verifyIdentity(userId: string, verificationArgs: any, version: number): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
@@ -78,9 +82,8 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         status: "verification-requested",
         verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
       });
-      var request = require('request');
       let body: any;
-      if (verificationArgs.Version === 2) {
+      if (version === 2) {
         body = {
           AcceptTruliooTermsAndConditions: true,
           Demo: false,
@@ -110,7 +113,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         body: body,
         json: true
       };
-      request(options, (error: any, response: any, verificationData: any) => {
+      self.request(options, (error: any, response: any, verificationData: any) => {
         if (error) {
           reject(`something went wrong on the client: ${error}`);
           return;
