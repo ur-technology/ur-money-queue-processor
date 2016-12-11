@@ -54,7 +54,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       self.lookupUserById(userId).then((user: any) => {
         let status = self.registrationStatus(user);
         if (status !== "verification-succeeded") {
-          reject(`unexpected status ${status}`);
+          reject(`unexpected status ${status} before announcement`);
         } else if (user.disabled) {
           reject('user is disabled');
         } else if (!user.wallet || !user.wallet.address) {

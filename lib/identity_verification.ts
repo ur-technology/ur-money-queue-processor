@@ -36,45 +36,47 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
 
         let status = self.registrationStatus(user);
         if (!_.includes(['initial', 'verification-failed', 'verification-payment-failed'], status)) {
-          self.rejectTask(queue, task, `unexpected status ${user.registration.status}`, reject);
+          self.rejectTask(queue, task, `unexpected status ${user.registration.status} before announcement`, reject);
           return;
         }
 
         let verifyIdentityAndResolve = () => {
-          self.verifyIdentity(task.userId, task.verificationArgs, task.version).then((status: string) => {
+          self.verifyIdentity(task.userId, task.verificationArgs).then((status: string) => {
             self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
           }, (error: any) => {
             self.rejectTask(queue, task, error, reject);
           });
         };
 
-        if (task.version === 2) {
-          let token = task.stripeTokenId;
-          let charge = self.stripe.charges.create({
-            amount: 299, // Amount in cents
-            currency: "usd",
-            source: task.stripeTokenId,
-            description: "UR Money ID Verification"
-          }, (error: any, charge: any) => {
-            if (error && error.type === 'StripeCardError') {
-              log.debug(`card declined; stripe error: `, JSON.stringify(error));
-              self.resolveTask(queue, _.merge(task, {result: {status: 'verification-payment-failed'}}), resolve, reject);
-            } else if (error) {
-              log.warn(`error processing payment: ${error}`);
-              self.rejectTask(queue, task, `There was an error processing your payment.`, reject);
-            } else {
-              verifyIdentityAndResolve();
-            }
-          });
-        } else {
+        if (!task.verificationArgs.Version || task.verificationArgs.Version < 10) {
           verifyIdentityAndResolve();
+          return;
         }
+
+        let charge = self.stripe.charges.create({
+          amount: 299, // Amount in cents
+          currency: "usd",
+          source: task.stripeTokenId,
+          description: "UR Money ID Verification"
+        }, (error: any, charge: any) => {
+          if (error && error.type === 'StripeCardError') {
+            log.debug(`card declined; stripe error: `, JSON.stringify(error));
+            self.resolveTask(queue, _.merge(task, {result: {status: 'verification-payment-failed'}}), resolve, reject);
+            return;
+          }
+          if (error) {
+            log.warn(`error processing payment: ${error}`);
+            self.rejectTask(queue, task, `There was an error processing your payment.`, reject);
+            return;
+          }
+          verifyIdentityAndResolve();
+        });
       });
     });
     return [queue];
   }
 
-  private verifyIdentity(userId: string, verificationArgs: any, version: number): Promise<string> {
+  private verifyIdentity(userId: string, verificationArgs: any): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
@@ -89,7 +91,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           "Content-Type": "application/json",
           "Authorization": `Basic ${QueueProcessor.env.TRULIOO_BASIC_AUTHORIZATION}`
         },
-        body: self.generateRequestBody(verificationArgs, version),
+        body: self.generateRequestBody(verificationArgs),
         json: true
       };
 
@@ -111,15 +113,15 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           status: status,
           verificationFinalizedAt: firebase.database.ServerValue.TIMESTAMP,
           verificationArgs: verificationArgs,
-          verificationResult: verificationData.Record
+          verificationResult: verificationData.Record,
         });
         resolve(status);
       });
     });
   }
 
-  private generateRequestBody(verificationArgs: any, version: number): any {
-    if (!version || version < 2) {
+  private generateRequestBody(verificationArgs: any): any {
+    if (!verificationArgs.Version || verificationArgs.Version < 2) {
       return verificationArgs;
     }
 
@@ -145,11 +147,11 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     if (body.CountryCode === 'MX') {
       // for Mexico, split surname into two fields if necessary
       let p: any = body.DataFields.PersonInfo;
-      if (p && p.firstSurName && !p.SecondSurName) {
+      if (p && p.FirstSurName && !p.SecondSurname) {
         let surnames = p.FirstSurName.split(' ');
         if (surnames.length > 1) {
           p.FirstSurName = surnames[0];
-          p.SecondSurName = _.slice(surnames, 1).join(' ');
+          p.SecondSurname = _.slice(surnames, 1).join(' ');
         }
       }
     }
@@ -164,12 +166,24 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     if (verificationArgs.IdentificationType === 'DriverLicense') {
       body.DataFields.DriverLicense = verificationArgs.DriverLicense;
     } else if (verificationArgs.IdentificationType === 'NationalId') {
-      body.DataFields.NationalIds = [verificationArgs.NationalId];
+      body.DataFields.NationalIds = [
+        _.merge(verificationArgs.NationalId, { Type: this.nationalIdType(body.CountryCode) })
+      ];
     } else if (verificationArgs.IdentificationType === 'Passport') {
       body.DataFields.Passport = verificationArgs.Passport;
     }
 
     return body;
+  }
+
+  private nationalIdType(countryCode: string) {
+    if (countryCode === 'GB') {
+      return 'Health';
+    } else if (countryCode === 'US') {
+      return 'SocialService';
+    } else {
+      return 'NationalID';
+    }
   }
 
   private standardizeObject(origObj: any) {
