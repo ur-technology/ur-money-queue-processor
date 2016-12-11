@@ -123,7 +123,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       return verificationArgs;
     }
 
-    verificationArgs = this.changeKeysToUpperFirst(verificationArgs);
+    verificationArgs = this.standardizeObject(verificationArgs);
 
     let body: any = {
       AcceptTruliooTermsAndConditions: true,
@@ -134,15 +134,29 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       DataFields: _.pick( verificationArgs, ['PersonInfo', 'Location', 'Communication'])
     };
 
-    // for Malaysia, add a FullName field wrapped in an AdditionalFields object
     if (body.CountryCode === 'MY') {
+      // for Malaysia, add a FullName field wrapped in an AdditionalFields object
       let p: any = body.DataFields.PersonInfo;
-      p.AdditionalFields = { FullName: `${p.FirstSurName} ${p.FirstGivenName}` };
+      if (p) {
+        p.AdditionalFields = { FullName: `${p.FirstSurName} ${p.FirstGivenName}` };
+      }
     }
 
-    // wrap Address1 field in AdditionalFields object
+    if (body.CountryCode === 'MX') {
+      // for Mexico, split surname into two fields if necessary
+      let p: any = body.DataFields.PersonInfo;
+      if (p && p.firstSurName && !p.SecondSurName) {
+        let surnames = (p.FirstSurName || '').split(' ');
+        if (surnames.length > 1) {
+          p.FirstSurName = surnames[0];
+          p.SecondSurName = _.slice(surnames, 1).join(' ');
+        }
+      }
+    }
+
     let l: any = body.DataFields.Location;
-    if (l.Address1) {
+    if (l && l.Address1) {
+      // wrap Address1 field in AdditionalFields object
       l.AdditionalFields = { Address1: l.Address1 };
       delete l.Address1;
     }
@@ -158,11 +172,13 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     return body;
   }
 
-  private changeKeysToUpperFirst(origObj: any) {
+  private standardizeObject(origObj: any) {
+    // changes key strings from format 'keyName' to 'KeyName'
+    // also trims key strings and value strings
     return Object.keys(origObj).reduce((newObj: any, key: any) => {
       let val = origObj[key];
-      let newVal = (typeof val === 'object') ? this.changeKeysToUpperFirst(val) : val;
-      let newKey = _.isString(key) ? _.upperFirst(key) : key;
+      let newVal = (typeof val === 'object') ? this.standardizeObject(val) : (_.isString(val) ? _.trim(val) : val);
+      let newKey = _.isString(key) ? _.upperFirst(_.trim(key)) : key;
       newObj[newKey] = newVal;
       return newObj;
     }, {});
