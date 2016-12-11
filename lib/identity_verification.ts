@@ -79,40 +79,20 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     return new Promise((resolve, reject) => {
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
       registrationRef.update({
-        status: "verification-requested",
+        status: "verification-initiated",
         verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
       });
-      let body: any;
-      if (version === 2) {
-        body = {
-          AcceptTruliooTermsAndConditions: true,
-          Demo: false,
-          CleansedAddress: true,
-          ConfigurationName: 'Identity Verification',
-          CountryCode: verificationArgs.CountryCode,
-          DataFields: _.pick( verificationArgs, ['PersonInfo', 'Location', 'Communication'])
-        };
-        if (verificationArgs.IdentificationType === 'Driver License') {
-          body.DataFields.DriverLicense = verificationArgs.DriverLicense;
-        } else if (verificationArgs.IdentificationType === 'National Id') {
-          body.DataFields.NationalIds = [verificationArgs.NationalId];
-        } else if (verificationArgs.IdentificationType === 'Passport') {
-          body.DataFields.Passport = verificationArgs.Passport;
-        }
-      } else {
-        body = verificationArgs;
-      }
-
-      let options = {
+      let options:any = {
         url: 'https://api.globaldatacompany.com/verifications/v1/verify',
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Basic ${QueueProcessor.env.TRULIOO_BASIC_AUTHORIZATION}`
         },
-        body: body,
+        body: self.generateRequestBody(verificationArgs, version),
         json: true
       };
+
       self.request(options, (error: any, response: any, verificationData: any) => {
         if (error) {
           reject(`something went wrong on the client: ${error}`);
@@ -137,4 +117,55 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       });
     });
   }
+
+  private generateRequestBody(verificationArgs: any, version: number): any {
+    if (!version || version < 2) {
+      return verificationArgs;
+    }
+
+    verificationArgs = this.changeKeysToUpperFirst(verificationArgs);
+
+    let body: any = {
+      AcceptTruliooTermsAndConditions: true,
+      Demo: false,
+      CleansedAddress: true,
+      ConfigurationName: 'Identity Verification',
+      CountryCode: verificationArgs.CountryCode,
+      DataFields: _.pick( verificationArgs, ['PersonInfo', 'Location', 'Communication'])
+    };
+
+    // for Malaysia, add a FullName field wrapped in an AdditionalFields object
+    if (body.CountryCode === 'MY') {
+      let p: any = body.DataFields.PersonInfo;
+      p.AdditionalFields = { FullName: `${p.FirstSurName} ${p.FirstGivenName}` };
+    }
+
+    // wrap Address1 field in AdditionalFields object
+    let l: any = body.DataFields.Location;
+    if (l.Address1) {
+      l.AdditionalFields = { Address1: l.Address1 };
+      delete l.Address1;
+    }
+
+    if (verificationArgs.IdentificationType === 'Driver License') {
+      body.DataFields.DriverLicense = verificationArgs.DriverLicense;
+    } else if (verificationArgs.IdentificationType === 'National Id') {
+      body.DataFields.NationalIds = [verificationArgs.NationalId];
+    } else if (verificationArgs.IdentificationType === 'Passport') {
+      body.DataFields.Passport = verificationArgs.Passport;
+    }
+
+    return body;
+  }
+
+  private changeKeysToUpperFirst(origObj: any) {
+    return Object.keys(origObj).reduce((newObj: any, key: any) => {
+      let val = origObj[key];
+      let newVal = (typeof val === 'object') ? this.changeKeysToUpperFirst(val) : val;
+      let newKey = _.isString(key) ? _.upperFirst(key) : key;
+      newObj[newKey] = newVal;
+      return newObj;
+    }, {});
+  }
+
 }
