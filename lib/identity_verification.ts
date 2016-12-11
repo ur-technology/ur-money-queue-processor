@@ -36,7 +36,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         }
 
         let verifyIdentityAndResolve = () => {
-          self.verifyIdentity(task.userId, task.verificationArgs).then((status: string) => {
+          self.verifyIdentity(task.userId, task.verificationArgs, task.version).then((status: string) => {
             self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
           }, (error: any) => {
             self.rejectTask(queue, task, error, reject);
@@ -44,7 +44,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         };
 
         if (task.stripeTokenId) {
-          let stripe = require("stripe")("sk_test_6iHyRQYCfUVredh4fK3q0yER");
+          let stripe = require("stripe")(QueueProcessor.env.STRIPE_SECRET_KEY);
           let token = task.stripeTokenId;
           let charge = stripe.charges.create({
             amount: 299, // Amount in cents
@@ -70,7 +70,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     return [queue];
   }
 
-  private verifyIdentity(userId: string, verificationArgs: any): Promise<string> {
+  private verifyIdentity(userId: string, verificationArgs: any, version: number): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
@@ -79,6 +79,27 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         verificationRequestedAt: firebase.database.ServerValue.TIMESTAMP
       });
       var request = require('request');
+      let body: any;
+      if (version === 2) {
+        body = {
+          AcceptTruliooTermsAndConditions: true,
+          Demo: false,
+          CleansedAddress: true,
+          ConfigurationName: 'Identity Verification',
+          CountryCode: verificationArgs.CountryCode,
+          DataFields: _.pick( verificationArgs, ['PersonInfo', 'Location', 'Communication'])
+        };
+        if (verificationArgs.IdentificationType === 'Driver License') {
+          body.DataFields.DriverLicense = verificationArgs.DriverLicense;
+        } else if (verificationArgs.IdentificationType === 'National Id') {
+          body.DataFields.NationalIds = [verificationArgs.NationalId];
+        } else if (verificationArgs.IdentificationType === 'Passport') {
+          body.DataFields.Passport = verificationArgs.Passport;
+        }
+      } else {
+        body = verificationArgs;
+      }
+
       let options = {
         url: 'https://api.globaldatacompany.com/verifications/v1/verify',
         method: "POST",
@@ -86,13 +107,21 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           "Content-Type": "application/json",
           "Authorization": `Basic ${QueueProcessor.env.TRULIOO_BASIC_AUTHORIZATION}`
         },
-        body: verificationArgs,
+        body: body,
         json: true
       };
       request(options, (error: any, response: any, verificationData: any) => {
         if (error) {
           reject(`something went wrong on the client: ${error}`);
           return;
+        }
+        if (!verificationData.Record) {
+          reject('no data returned from Trulioo');
+          return;
+        }
+        if (self.containsUndefinedValue(verificationData.Record)) {
+          log.warn('data returned from Trulioo contains undefined values');
+          self.removeUndefineds(verificationData.Record);
         }
         let status = verificationData.Record && verificationData.Record.RecordStatus === "match" ? "verification-succeeded": "verification-failed";
         registrationRef.update({

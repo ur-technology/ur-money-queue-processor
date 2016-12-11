@@ -249,7 +249,7 @@ export class QueueProcessor {
      (user.profilePhotoUrl ? 1 : 0);
   }
 
-  private containsUndefinedValue(objectOrArray: any): boolean {
+  containsUndefinedValue(objectOrArray: any): boolean {
     return _.some(objectOrArray, (value, key) => {
       let type = typeof (value);
       if (type == 'undefined') {
@@ -260,6 +260,21 @@ export class QueueProcessor {
         return false;
       }
     });
+  }
+
+  removeUndefineds(objectOrArray: any){
+    var isArray = objectOrArray instanceof Array;
+    for (var k in objectOrArray) {
+      if (objectOrArray[k] === undefined) {
+        if (isArray) {
+          objectOrArray.splice(k,1);
+        } else {
+          delete objectOrArray[k];
+        }
+      } else if (typeof objectOrArray[k] === 'object') {
+        this.removeUndefineds(objectOrArray[k]);
+      }
+    };
   }
 
 }
