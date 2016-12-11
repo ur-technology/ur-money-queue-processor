@@ -36,7 +36,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
         }
 
         let verifyIdentityAndResolve = () => {
-          self.verifyIdentity(task.userId, task.verificationArgs, task.version).then((status: string) => {
+          self.verifyIdentity(task.userId, task.verificationArgs).then((status: string) => {
             self.resolveTask(queue, _.merge(task, {result: {status: status}}), resolve, reject);
           }, (error: any) => {
             self.rejectTask(queue, task, error, reject);
@@ -70,7 +70,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
     return [queue];
   }
 
-  private verifyIdentity(userId: string, verificationArgs: any, version: number): Promise<string> {
+  private verifyIdentity(userId: string, verificationArgs: any): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
@@ -80,7 +80,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
       });
       var request = require('request');
       let body: any;
-      if (version === 2) {
+      if (verificationArgs.Version === 2) {
         body = {
           AcceptTruliooTermsAndConditions: true,
           Demo: false,
