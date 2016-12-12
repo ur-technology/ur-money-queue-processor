@@ -48,7 +48,7 @@ export class IdentityVerificationQueueProcessor extends QueueProcessor {
           });
         };
 
-        if (!task.verificationArgs.Version || task.verificationArgs.Version < 10) {
+        if (!task.verificationArgs.Version || task.verificationArgs.Version < 2) {
           verifyIdentityAndResolve();
           return;
         }
