@@ -50,25 +50,7 @@ export class InvitationQueueProcessor extends QueueProcessor {
           }
 
           // add new user to users list
-          let newUser: any = {
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-            firstName: task.invitee.firstName || '',
-            middleName: task.invitee.middleName || '',
-            lastName: task.invitee.lastName || '',
-            phone: task.invitee.phone,
-            sponsor: {
-              userId: task.sponsorUserId,
-              name: sponsor.name,
-              profilePhotoUrl: sponsor.profilePhotoUrl,
-              announcementTransactionConfirmed: !!sponsor.wallet &&
-                !!sponsor.wallet.announcementTransaction &&
-                !!sponsor.wallet.announcementTransaction.blockNumber &&
-                !!sponsor.wallet.announcementTransaction.hash
-            },
-            downlineLevel: (sponsor.downlineLevel || 0) + 1
-          };
-          newUser.name = self.fullName(newUser);
-          newUser.profilePhotoUrl = self.generateProfilePhotoUrl(newUser);
+          let newUser = self.buildNewUser(task.invitee.phone, task.invitee.firstName, task.invitee.middleName, task.invitee.lastName, sponsor);
           let newUserRef = self.db.ref('/users').push(newUser);
 
           // add new user to sponsor's downline users

@@ -56,11 +56,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
       let parentTaskRef = self.db.ref(`/emailAuthCodeMatchingQueue/tasks/${task._id}`);
       parentTaskRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
 
-        // if the user just authenticated his email, we already have
-        // the userId of an user who was inivited via prefinery
-        let parentTask = snapshot.val();
-        if (parentTask && parentTask.userId) {
-          task.userId = parentTask.userId;
+        let sendAuthenticationCodeAndResolveAsCompleted = () => {
           self.sendAuthenticationCodeViaSms(task.phone).then((authenticationCode: string) => {
             task.authenticationCode = authenticationCode;
             task._new_state = "completed";
@@ -68,16 +64,51 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           }, (error) => {
             self.rejectTask(queue, task, error, reject);
           });
+        }
+
+        // If prior email authentcation was successful, then there is no need
+        // to look up user via phone. This scenario happens when user signs up
+        // via prefinery and then uses his email to authenticate himself.
+        let parentTask = snapshot.val();
+        if (parentTask && parentTask.userId) {
+          task.email = parentTask.email;
+          task.userId = parentTask.userId;
+          sendAuthenticationCodeAndResolveAsCompleted();
           return;
         }
 
-        // look up userId of user via app
-        // delete task.userId;
         self.lookupUsersByPhone(task.phone).then((matchingUsers) => {
           if (_.isEmpty(matchingUsers)) {
-            log.info(`  no matching user found for ${task.phone}`);
-            task._new_state = "canceled_because_user_not_invited";
-            self.resolveTask(queue, task, resolve, reject);
+
+            let resolveAsNotInvited = () => {
+              log.info(`  no matching user found for ${task.phone}`);
+              task._new_state = "canceled_because_user_not_invited";
+              self.resolveTask(queue, task, resolve, reject);
+            };
+
+            if (task.referralCode) {
+
+              self.lookupUserByReferralCode(task.referralCode).then((sponsor: any) => {
+                if (!sponsor) {
+                  log.info(`  no sponsor found with referral code ${task.referralCode}`);
+                  resolveAsNotInvited();
+                  return;
+                }
+
+                if (sponsor.disabled) {
+                  log.info(`  sponsor ${sponsor.userId} with referral code ${task.referralCode} found, but was disabled`);
+                  resolveAsNotInvited();
+                  return;
+                }
+
+                task.sponsor = _.pick(sponsor, ['userId', 'name', 'profilePhotoUrl']);
+                sendAuthenticationCodeAndResolveAsCompleted();
+              }, (error) => {
+                self.rejectTask(queue, task, error, reject);
+              });
+            } else {
+              resolveAsNotInvited();
+            }
             return;
           }
 
@@ -104,13 +135,8 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           // TODO: handle case where there are multiple invitations; for now, choose first user
           log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.phone}`);
           task.userId = matchingUser.userId;
-          self.sendAuthenticationCodeViaSms(task.phone).then((authenticationCode: string) => {
-            task.authenticationCode = authenticationCode;
-            task._new_state = "completed";
-            self.resolveTask(queue, task, resolve, reject);
-          }, (error) => {
-            self.rejectTask(queue, task, error, reject);
-          });
+          task.referralCode = null; // clarify that we are not going to use the referral code
+          sendAuthenticationCodeAndResolveAsCompleted();
         }, (error) => {
           self.rejectTask(queue, task, error, reject);
         });
@@ -130,32 +156,62 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
       parentTaskRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
         let parentTask = snapshot.val();
         if (!parentTask) {
-          self.rejectTask(queue, task, `could not find parent task ${parentTaskRef.toString()}`, reject);
-          return;
+          return Promise.reject(`could not find parent task ${parentTaskRef.toString()}`);
         }
 
         task.originalAuthenticationCode = parentTask.authenticationCode;
-        task.phone = parentTask.phone;
-        task.userId = parentTask.userId;
+        _.extend(task, _.pick(parentTask, ['phone', 'userId', 'email', 'referralCode', 'sponsor']));
+
+        if (!task.userId && !task.referralCode) {
+          return Promise.reject(`expecting either a userId or a referralCode`);
+        }
 
         let codeMatch = task.authenticationCode == task.originalAuthenticationCode || (task.phone == '+16199344518' && task.authenticationCode == '923239');
         task.result = { codeMatch: codeMatch };
-        if (codeMatch) {
+        if (task.userId) {
+          return self.updateFailedLoginCount(task.userId, codeMatch)
+        } else {
+          return Promise.resolve();
+        }
+      }).then(() => {
+        if (task.email && task.result.codeMatch) {
+          return self.db.ref(`/users/${task.userId}`).update({ phone: task.phone });
+        } else {
+          return Promise.resolve();
+        }
+      }).then(() => {
+        if (task.referralCode && task.result.codeMatch) {
+          return self.createNewUserBasedOnReferralCode(task);
+        } else {
+          return Promise.resolve();
+        }
+      }).then(() => {
+        if (task.result.codeMatch) {
+          // authentication succeeded: create auth token so user can login
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} matches actual authenticationCode; sending authToken to user`);
           task.result.authToken = firebase.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
         } else {
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
         }
-        let newPhone: string = codeMatch && task.userId ? task.phone : undefined;
-        return self.updateUserLoginCountAndPhone(task.userId, codeMatch, newPhone);
-      }).then(() => {
         task._new_state = 'completed';
         self.resolveTask(queue, task, resolve, reject);
       }, (error: any) => {
+        queueRef.child(`tasks/${task._id}`).update({result: {codeMatch: false}}); // just tell the app that the match failed (in reality, we encountered some other kind of problem)
         self.rejectTask(queue, task, error, reject);
       });
     });
     return queue;
+  }
+
+  private createNewUserBasedOnReferralCode(task: any): Promise<any> {
+    if (!task.sponsor) {
+      return Promise.reject(`missing sponsor info`);
+    }
+
+    let newUser = this.buildNewUser(task.phone, undefined, undefined, undefined, _.merge(task.sponsor, {referralCode: task.referralCode}));
+    let newUserRef = this.db.ref('/users').push(newUser);
+    task.userId = newUserRef.key;
+    return newUserRef; // this is a promise
   }
 
   private processEmailAuthCodeGenerationQueue() {
@@ -173,33 +229,32 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
       self.lookupUsersByEmail(task.email).then((matchingUsers) => {
         if (_.isEmpty(matchingUsers)) {
           log.info(`  no matching user found for ${task.email}`);
-          task._new_state = "canceled_because_user_not_invited";
-          self.resolveTask(queue, task, resolve, reject);
-          return;
+          throw 'canceled_because_user_not_invited';
         }
 
         let activeUsers = _.reject(matchingUsers, 'disabled');
         if (_.isEmpty(activeUsers)) {
           let disabledUser: any = _.first(matchingUsers);
           log.info(`  found matching user ${disabledUser.userId} for ${task.email} but user was disabled`);
-          task._new_state = "canceled_because_user_disabled";
-          self.resolveTask(queue, task, resolve, reject);
-          return;
+          throw 'canceled_because_user_disabled';
         }
 
         // TODO: handle case where there are multiple invitations; for now, choose first user
         let matchingUser: any = _.first(activeUsers);
         log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.email}`);
         task.userId = matchingUser.userId;
-        self.sendAuthenticationCodeViaEmail(task.email).then((authenticationCode: string) => {
-          task.authenticationCode = authenticationCode;
-          task._new_state = "completed";
-          self.resolveTask(queue, task, resolve, reject);
-        }, (error) => {
-          self.rejectTask(queue, task, error, reject);
-        });
+        return self.sendAuthenticationCodeViaEmail(task.email);
+      }).then((authenticationCode: string) => {
+        task.authenticationCode = authenticationCode;
+        task.new_state = 'completed';
+        self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
-        self.rejectTask(queue, task, error, reject);
+        if (_.isString(error) && /^canceled_/.test(error)) {
+          task._new_state = error;
+          self.resolveTask(queue, task, resolve, reject);
+        } else {
+          self.rejectTask(queue, task, error, reject);
+        }
       });
     });
     return queue;
@@ -224,9 +279,6 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         task.email = parentTask.email;
         task.userId = parentTask.userId;
 
-        return self.updateUserLoginCountAndPhone(task.userId, false, undefined);
-      }).then(() => {
-
         let codeMatch = task.originalAuthenticationCode == task.authenticationCode;
         if (codeMatch) {
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} matches actual authenticationCode`);
@@ -234,27 +286,26 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
         }
         task.result = { codeMatch: codeMatch };
-        task._state = 'completed';
+        return self.updateFailedLoginCount(task.userId, codeMatch);
+      }).then(() => {
+        task._new_state = 'completed';
         self.resolveTask(queue, task, resolve, reject);
       }, (error: any) => {
+        queueRef.child(`tasks/${task._id}`).update({result: {codeMatch: false}}); // just tell the app that the match failed
         self.rejectTask(queue, task, error, reject);
       });
     });
     return queue;
   }
 
-  private updateUserLoginCountAndPhone(userId: string, resetFailedLoginCount: boolean, newPhone: string): Promise<any> {
+  private updateFailedLoginCount(userId: string, codeMatch: boolean): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       self.lookupUserById(userId).then((user: any) => {
-        let attrs: any = {
-          failedLoginCount: resetFailedLoginCount ? 0 : (user.failedLoginCount || 0) + 1,
+        return self.db.ref(`/users/${userId}`).update({
+          failedLoginCount: codeMatch ? 0 : (user.failedLoginCount || 0) + 1,
           updatedAt: firebase.database.ServerValue.TIMESTAMP
-        };
-        if (newPhone) {
-          attrs.phone = newPhone;
-        }
-        return self.db.ref(`/users/${userId}`).update(attrs);
+        });
       }).then(() => {
         resolve();
       }, (error: any) => {
@@ -346,6 +397,21 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     let max = 999999;
     let num = Math.floor(Math.random() * (max - min + 1)) + min;
     return '' + num;
+  }
+
+  lookupUserByReferralCode(referralCode: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.lookupUsersByReferralCode(referralCode).then((matchingUsers: any) => {
+        let userIds: string[] = _.keys(matchingUsers);
+        let matchingUser: any = undefined;
+        if (userIds.length > 0) {
+          matchingUser = matchingUsers[userIds[0]];
+          matchingUser.userId = userIds[0];
+        }
+        resolve(matchingUser);
+      });
+    });
   }
 
 }

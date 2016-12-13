@@ -237,15 +237,13 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       userReportedReferrer: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82178 }) || {}).answer
     };
     processedPrefineryUser = _.mapValues(_.omitBy(processedPrefineryUser, _.isNil), (value: string) => { return _.trim(value || ''); });
-    let candidate: any = {
-      "firstName" : _.startCase(_.toLower(prefineryUser.profile.first_name)),
-      "lastName" : _.startCase(_.toLower(prefineryUser.profile.last_name)),
-      "email" : _.toLower(_.trim(prefineryUser.email || '')),
-      "prefineryUser" : processedPrefineryUser,
-      "createdAt" : firebase.database.ServerValue.TIMESTAMP
-    };
-    candidate.name = `${candidate.firstName} ${candidate.lastName}`;
-    candidate.profilePhotoUrl = this.generateProfilePhotoUrl(candidate);
+    let candidate: any = this.buildNewUser(undefined, prefineryUser.profile.first_name, undefined, prefineryUser.profile.last_name, undefined);
+    candidate.email = _.toLower(_.trim(prefineryUser.email || ''));
+    candidate.prefineryUser = processedPrefineryUser;
+    let matches = candidate.prefineryUser.referralLink.match(/[\?\&]r\=(\w+)\b/);
+    if (matches && matches[1]) {
+      candidate.referralCode = matches[1];
+    }
     candidate.importStatus = 'unprocessed';
     candidate.userId = this.db.ref("/users").push().key;
     return candidate;

@@ -81,7 +81,7 @@ export class QueueProcessor {
   };
 
   fullName(user: any) {
-    return `${user.firstName || ""} ${user.middleName || ""} ${user.lastName || ""}`.trim().replace(/  /, " ");
+    return `${user.firstName || ''} ${user.middleName || ''} ${user.lastName || ''}`.trim().replace(/  /, ' ');
   }
 
   startTask(queue: any, task: any, suppressLogging?: boolean) {
@@ -121,16 +121,11 @@ export class QueueProcessor {
         return;
       }
 
-      let text: string;
-      if (self.isCompletelySignedUp(user)) {
-        text = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
-      } else {
-        text = "This is a reminder that " + self.fullName(user.sponsor) + " has invited you to take part in the UR Capital beta test. There are only a few weeks left to sign up. As a beta tester, you will be the first to access UR Money, a free mobile app that makes it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. You will also be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
-      }
+      let text: string = "Thanks again for taking part in the UR Capital beta program! In the coming weeks, we’ll be releasing our new, free mobile app—UR Money—aimed at making it easier for non-technical people to acquire and use cryptocurrency for everyday transactions. As a beta tester, you will be awarded an amount of cryptocurrency based on the status you build by referring others to the beta test. We look forward to welcoming you to the world of cryptocurrency!";
       text = text + " put url here";
       userSnapshot.ref.child("smsMessages").push({
         name: messageName,
-        type: self.isCompletelySignedUp(user) ? "signUp" : "invitation",
+        type: "signUp",
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         sendAttempted: false,
         phone: user.phone,
@@ -171,6 +166,11 @@ export class QueueProcessor {
 
   lookupUsersByEmail(email: string): Promise<any[]> {
     let ref = this.db.ref("/users").orderByChild("email").equalTo(email);
+    return this.lookupUsers(ref);
+  }
+
+  lookupUsersByReferralCode(referralCode: string): Promise<any[]> {
+    let ref = this.db.ref("/users").orderByChild("referralCode").equalTo(referralCode);
     return this.lookupUsers(ref);
   }
 
@@ -220,17 +220,16 @@ export class QueueProcessor {
   verificationCompleted(user: any) {
     return _.includes([
         'verification-succeeded',
-        'announcement-requested',
-        'announcement-failed',
         'announcement-initiated',
+        'announcement-requested', // deprecated
+        'announcement-failed',
         'announcement-confirmed'
       ], this.registrationStatus(user));
   }
 
   isCompletelySignedUp(user: any) {
     return !user.disabled &&
-      this.verificationCompleted(user),
-      !!user.name &&
+      this.verificationCompleted(user) &&
       !!user.wallet && !!user.wallet.address;
   }
 
@@ -275,6 +274,35 @@ export class QueueProcessor {
         this.removeUndefineds(objectOrArray[k]);
       }
     };
+  }
+
+  buildNewUser(phone: string, firstName: string, middleName: string, lastName: string, sponsor: any) {
+    let cleanUpNamePart = (namePart: string) => {
+      return  _.startCase(_.toLower(_.trim(namePart || '')));
+    };
+    let newUser: any = {
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      firstName: cleanUpNamePart(firstName),
+      middleName: cleanUpNamePart(middleName),
+      lastName: cleanUpNamePart(lastName)
+    };
+    phone = _.trim(phone || '');
+    if (phone) {
+      newUser.phone = phone;
+    }
+    newUser.name = this.fullName(newUser);
+    newUser.profilePhotoUrl = this.generateProfilePhotoUrl(newUser);
+    if (sponsor && sponsor.userId) {
+      newUser.sponsor = _.pick(sponsor, ['userId', 'name', 'profilePhotoUrl']);
+      newUser.sponsor.announcementTransactionConfirmed = !!sponsor.wallet &&
+        !!sponsor.wallet.announcementTransaction &&
+        !!sponsor.wallet.announcementTransaction.blockNumber &&
+        !!sponsor.wallet.announcementTransaction.hash;
+      newUser.downlineLevel = (sponsor.downlineLevel || 0) + 1;
+    }
+    let chars: string = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
+    newUser.referralCode = _.sampleSize(chars,6).join('');
+    return newUser;
   }
 
 }
