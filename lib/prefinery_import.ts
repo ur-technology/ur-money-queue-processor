@@ -241,7 +241,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
     let candidate: any = this.buildNewUser(undefined, prefineryUser.profile.first_name, undefined, prefineryUser.profile.last_name, undefined);
     candidate.email = _.toLower(_.trim(prefineryUser.email || ''));
     candidate.prefineryUser = processedPrefineryUser;
-    let matches = candidate.prefineryUser.referralLink && candidate.prefineryUser.referralLink.match(/[\?\&]r\=(\w+)\b/);
+    let matches = candidate.prefineryUser.shareLink && candidate.prefineryUser.shareLink.match(/[\?\&]r\=(\w+)\b/);
     if (matches && matches[1]) {
       candidate.referralCode = matches[1];
     }
