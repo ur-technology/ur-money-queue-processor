@@ -227,7 +227,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       importBatchId: this.importBatchId,
       id: prefineryUser.id,
       email: prefineryUser.email,
-      ipAddress: prefineryUser.ip_address,
+      ipAddress: prefineryUser.profile.ip,
       joinedAt: prefineryUser.joined_at,
       firstName: prefineryUser.profile.first_name,
       lastName: prefineryUser.profile.last_name,
@@ -235,7 +235,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       phone: prefineryUser.profile.telephone,
       httpReferrer: prefineryUser.profile.http_referrer,
       referredBy: prefineryUser.referred_by || 'unknownuser@ur.technology',
-      shareLink: prefineryUser.profile.share_link,
+      shareLink: prefineryUser.share_link,
       userReportedCountry: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82186 }) || {}).answer,
       userReportedReferrer: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82178 }) || {}).answer
     };
