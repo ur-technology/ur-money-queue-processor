@@ -231,8 +231,9 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       lastName: prefineryUser.profile.last_name,
       country: prefineryUser.profile.country,
       phone: prefineryUser.profile.telephone,
-      referralLink: prefineryUser.profile.http_referrer,
+      httpReferrer: prefineryUser.profile.http_referrer,
       referredBy: prefineryUser.referred_by || 'unknownuser@ur.technology',
+      shareLink: prefineryUser.profile.share_link,
       userReportedCountry: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82186 }) || {}).answer,
       userReportedReferrer: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82178 }) || {}).answer
     };
