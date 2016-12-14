@@ -221,7 +221,9 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
   }
 
   buildCandidate(prefineryUser: any) {
-    let processedPrefineryUser: any = {
+    let candidate: any = this.buildNewUser(undefined, prefineryUser.profile.first_name, undefined, prefineryUser.profile.last_name, undefined);
+
+    let p: any = {
       importBatchId: this.importBatchId,
       id: prefineryUser.id,
       email: prefineryUser.email,
@@ -237,16 +239,17 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       userReportedCountry: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82186 }) || {}).answer,
       userReportedReferrer: (_.find((prefineryUser.responses || []), (r: any) => { return r.question_id === 82178 }) || {}).answer
     };
-    processedPrefineryUser = _.mapValues(_.omitBy(processedPrefineryUser, _.isNil), (value: string) => { return _.trim(value || ''); });
-    let candidate: any = this.buildNewUser(undefined, prefineryUser.profile.first_name, undefined, prefineryUser.profile.last_name, undefined);
-    candidate.email = _.toLower(_.trim(prefineryUser.email || ''));
-    candidate.prefineryUser = processedPrefineryUser;
-    let matches = candidate.prefineryUser.shareLink && candidate.prefineryUser.shareLink.match(/[\?\&]r\=(\w+)\b/);
-    if (matches && matches[1]) {
-      candidate.referralCode = matches[1];
+    candidate.prefineryUser = _.mapValues(_.omitBy(p, _.isNil), (val: string) => { return _.trim(val || ''); });
+
+    let referralCodeMatches = (candidate.prefineryUser.shareLink || '').match(/[\?\&]r\=(\w+)\b/);
+    if (referralCodeMatches && referralCodeMatches[1]) {
+      candidate.referralCode = referralCodeMatches[1];
     }
+
+    candidate.email = _.toLower(_.trim(prefineryUser.email || ''));
     candidate.importStatus = 'unprocessed';
     candidate.userId = this.db.ref("/users").push().key;
+
     return candidate;
   }
 
