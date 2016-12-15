@@ -203,6 +203,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
           });
           self.importUnprocessedCandidates(false).then((newDataEncountered: boolean) => {
             self.showStats();
+            // if (!_.isEmpty(prefineryUsers)) {
             if (newDataEncountered) {
               return self.loadCandidatesFromPrefinery(startPage + 1);
             } else {
