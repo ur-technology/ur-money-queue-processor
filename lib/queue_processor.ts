@@ -174,6 +174,11 @@ export class QueueProcessor {
     return this.lookupUsers(ref);
   }
 
+  lookupUsersByPrefineryId(id: string): Promise<any[]> {
+    let ref = this.db.ref("/users").orderByChild("prefineryUser/id").equalTo(id);
+    return this.lookupUsers(ref);
+  }
+
   lookupUsers(ref: any): Promise<any[]> {
     let self = this;
     return new Promise((resolve, reject) => {
