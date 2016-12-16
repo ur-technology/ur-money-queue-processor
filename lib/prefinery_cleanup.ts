@@ -3,28 +3,28 @@ import * as _ from 'lodash';
 import * as log from 'loglevel';
 import {QueueProcessor} from './queue_processor';
 
-export class PrefineryImportQueueProcessor extends QueueProcessor {
+export class PrefineryCleanupQueueProcessor extends QueueProcessor {
   candidates: any;
   importBatchId: string;
 
   init(): Promise<any>[] {
     return [
-      this.ensureQueueSpecLoaded("/prefineryImportQueue/specs/import", {
+      this.ensureQueueSpecLoaded("/prefineryCleanupQueue/specs/import", {
         "start_state": "ready_to_import",
         "in_progress_state": "processing",
         "error_state": "error",
         "timeout": 120000,
         "retries": 5
       }),
-      this.setUpPrefineryImportQueue()
+      this.setUpPrefineryCleanupQueue()
     ];
   }
 
-  private setUpPrefineryImportQueue(): Promise<any> {
+  private setUpPrefineryCleanupQueue(): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       // make sure there is at least one task in the queue
-      let tasksRef = self.db.ref(`/prefineryImportQueue/tasks`);
+      let tasksRef = self.db.ref(`/prefineryCleanupQueue/tasks`);
       tasksRef.once('value').then((snapshot: firebase.database.DataSnapshot) => {
         if (snapshot.exists()) {
           return Promise.resolve();
@@ -41,7 +41,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
 
   process(): any[] {
     let self = this;
-    let queueRef = self.db.ref("/prefineryImportQueue");
+    let queueRef = self.db.ref("/prefineryCleanupQueue");
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
@@ -54,7 +54,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
         self.loadCandidatesFromPrefinery(1).then(() => {
           self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_import", delaySeconds: 45 }), resolve, reject, true);
         });
-      }, delaySeconds * 1000);
+      }, 0 * 1000);
     });
 
     return [importQueue];
@@ -76,29 +76,30 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
     let self = this;
     return new Promise((resolve, reject) => {
 
-      self.lookupUserByEmailLoosely(candidate.email).then((matchingUser: any) => {
-        if (matchingUser) {
-          return Promise.reject('skipped-for-duplicate-email')
-        } else {
-          return self.lookupUserByEmailLoosely(candidate.prefineryUser.referredBy);
+      let existingUser: any;
+      let resolveValue: string;
+      self.lookupUserByPrefineryId(candidate.prefineryUser.id).then((matchingUser: any) => {
+        if (!matchingUser) {
+          return self.lookupUserByEmailLoosely(candidate.email).then((matchingUser) => {
+            if (matchingUser) {
+              log.info(`matching email ${candidate.email} but missing prefinery id ${candidate.prefineryUser.id}`);
+              return Promise.reject('skipped-for-matching-email-but-missing-prefinery-id');
+            } else if (_.includes(candidate.prefineryUser.status, ['applied', 'active'])) {
+              return Promise.reject('skipped-for-missing-email-and-prefinery-id-with-valid-status');
+            } else {
+              return Promise.reject('skipped-for-missing-email-and-prefinery-id-with-invalid-status');
+            }
+          });
         }
-      }).then((sponsor: any) => {
-        if (sponsor) {
-          self.addSponsorInfo(candidate, sponsor);
-          let newUser = _.omit(candidate,['importStatus', 'userId']);
-          return self.db.ref(`/users/${candidate.userId}`).set(newUser);
-        } else {
-          return Promise.reject('skipped-for-sponsor-email-lookup-failure');
+        existingUser = matchingUser;
+        if (_.toNumber(existingUser.prefineryUser.id) !== _.toNumber(candidate.prefineryUser.id)) {
+          return Promise.reject('skipped-for-having-mismatched-prefinery-ids');
         }
+        return self.db.ref(`/users/${existingUser.userId}/prefineryUser`).set(candidate.prefineryUser);
       }).then(() => {
-        return self.incrementDownlineSize(candidate.sponsor);
+        return self.db.ref(`/users/${existingUser.userId}`).update({ referralCode: candidate.referralCode });
       }).then(() => {
-        _.each(self.candidates, (c) => {
-          if (c.importStatus === 'skipped-for-sponsor-email-lookup-failure' && c.prefineryUser && c.prefineryUser.referredBy === candidate.email) {
-            c.importStatus = 'unprocessed';
-          }
-        });
-        resolve('imported');
+        resolve('updated-prefinery-data');
       }, (errorOrStatus: any) => {
         if (_.isString(errorOrStatus) && /^skipped\-/.test(errorOrStatus)) {
           resolve(errorOrStatus)
@@ -194,15 +195,12 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
             return;
           }
           _.each(prefineryUsers, (prefineryUser: any, index: number) => {
-            if (_.includes(['active', 'applied'],prefineryUser.status)) {
-              let candidate: any = self.buildCandidate(prefineryUser);
-              self.candidates[candidate.userId] = candidate;
-            }
+            let candidate: any = self.buildCandidate(prefineryUser);
+            self.candidates[candidate.userId] = candidate;
           });
           self.importUnprocessedCandidates(false).then((newDataEncountered: boolean) => {
             self.showStats();
-            // if (!_.isEmpty(prefineryUsers)) {
-            if (newDataEncountered) {
+            if (!_.isEmpty(prefineryUsers)) {
               return self.loadCandidatesFromPrefinery(startPage + 1);
             } else {
               return Promise.resolve(undefined);
@@ -296,6 +294,17 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
     let self = this;
     return new Promise((resolve, reject) => {
       self.lookupUsersByEmail(email).then((matchingUsers) => {
+        resolve(_.first(matchingUsers));
+      }, (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  private lookupUserByPrefineryId(id: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      self.lookupUsersByPrefineryId(id).then((matchingUsers) => {
         resolve(_.first(matchingUsers));
       }, (error) => {
         reject(error);

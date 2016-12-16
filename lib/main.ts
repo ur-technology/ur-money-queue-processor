@@ -13,6 +13,7 @@ import {AuthenticationQueueProcessor} from './authentication';
 import {PhoneLookupQueueProcessor} from './phone_lookup';
 import {UrTransactionImportQueueProcessor} from './ur_transaction_import';
 import {PrefineryImportQueueProcessor} from './prefinery_import';
+import {PrefineryCleanupQueueProcessor} from './prefinery_cleanup';
 
 if (!process.env.NODE_ENV) {
   dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
@@ -35,7 +36,8 @@ let queueProcessors = _.map([
   AuthenticationQueueProcessor,
   PhoneLookupQueueProcessor,
   UrTransactionImportQueueProcessor,
-  PrefineryImportQueueProcessor
+  PrefineryImportQueueProcessor,
+  PrefineryCleanupQueueProcessor
 ], (queueProcessorClass) => {
   return new queueProcessorClass();
 });

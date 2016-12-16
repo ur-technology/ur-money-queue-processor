@@ -289,7 +289,8 @@ export class QueueProcessor {
       createdAt: firebase.database.ServerValue.TIMESTAMP,
       firstName: cleanUpNamePart(firstName),
       middleName: cleanUpNamePart(middleName),
-      lastName: cleanUpNamePart(lastName)
+      lastName: cleanUpNamePart(lastName),
+      downlineSize: 0
     };
     phone = _.trim(phone || '');
     if (phone) {
