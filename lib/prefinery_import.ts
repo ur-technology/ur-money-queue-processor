@@ -85,15 +85,13 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       }).then((sponsor: any) => {
         if (sponsor) {
           self.addSponsorInfo(candidate, sponsor);
-          return self.db.ref(`/users/${candidate.userId}`).set(_.omit(candidate,['importStatus', 'userId']));
+          let newUser = _.omit(candidate,['importStatus', 'userId']);
+          return self.db.ref(`/users/${candidate.userId}`).set(newUser);
         } else {
           return Promise.reject('skipped-for-sponsor-email-lookup-failure');
         }
       }).then(() => {
-        return self.db.ref(`/users/${candidate.sponsor.userId}/downlineUsers/${candidate.userId}`).set({
-          name: candidate.name,
-          profilePhotoUrl: candidate.profilePhotoUrl
-        });
+        return self.incrementDownlineSize(candidate.sponsor);
       }).then(() => {
         _.each(self.candidates, (c) => {
           if (c.importStatus === 'skipped-for-sponsor-email-lookup-failure' && c.prefineryUser && c.prefineryUser.referredBy === candidate.email) {

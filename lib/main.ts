@@ -42,11 +42,11 @@ let queueProcessors = _.map([
 
 QueueProcessor.env = process.env;
 
-let initializerPromises = _.flatten(_.map(queueProcessors, (p) => { return p.disabled() ? [] : p.init(); }));
+let initializerPromises = _.flatten(_.map(queueProcessors, (p) => { return p.enabled() ? p.init() : []; }));
 
 let queues: any[] = [];
 Promise.all(initializerPromises).then(values => {
-  queues = _.flatten(_.map(queueProcessors, (p) => { return p.disabled() ? [] : p.process(); }));
+  queues = _.flatten(_.map(queueProcessors, (p) => { return p.enabled() ? p.process() : []; }));
 });
 
 process.on('SIGTERM', () => {

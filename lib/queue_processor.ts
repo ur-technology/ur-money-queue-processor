@@ -8,7 +8,7 @@ export class QueueProcessor {
   env: any;
   db: any;
   Queue: any;
-  _disabled: boolean;
+  _enabled: boolean;
   static env: any;
   static _web3: any;
 
@@ -26,16 +26,16 @@ export class QueueProcessor {
     this.Queue = require('firebase-queue');
   }
 
-  disabled(): boolean {
-    if (_.isUndefined(this._disabled)) {
+  enabled(): boolean {
+    if (_.isUndefined(this._enabled)) {
       let funcNameRegex = /function (.{1,})\(/;
       let results = (funcNameRegex).exec((this).constructor.toString());
       let className = results[1];
-      let flag = _.toUpper(_.snakeCase(className)).replace(/_QUEUE_PROCESSOR$/,'_DISABLED');
+      let flag = _.toUpper(_.snakeCase(className)).replace(/$/,'_ENABLED');
       let flagValue = QueueProcessor.env[flag];
-      this._disabled = !!flagValue && /true/i.test(flagValue);
+      this._enabled = !!flagValue && /true/i.test(flagValue);
     }
-    return this._disabled;
+    return this._enabled;
   }
 
   ensureQueueSpecLoaded(specPath: string, specValue: any): Promise<any> {
@@ -310,4 +310,26 @@ export class QueueProcessor {
     return newUser;
   }
 
+  incrementDownlineSize(userInfo: any): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let user: any;
+
+      self.lookupUserById(userInfo.userId).then((matchedUser: any) => {
+        user = matchedUser;
+        if (!user) {
+          return Promise.reject(`unable to find user with userId ${user.userId}`);
+        }
+        return self.db.ref(`/users/${user.userId}`).update({
+          downlineSize: (user.downlineSize || 0) + 1
+        });
+      }).then(() => {
+        return user.sponsor ? self.incrementDownlineSize(user.sponsor) : Promise.resolve();
+      }).then(() => {
+        resolve();
+      }, (error) => {
+        reject(error);
+      });
+    });
+  }
 }

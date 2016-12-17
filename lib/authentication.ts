@@ -204,14 +204,25 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
   }
 
   private createNewUserBasedOnReferralCode(task: any): Promise<any> {
-    if (!task.sponsor) {
-      return Promise.reject(`missing sponsor info`);
-    }
+    let self = this;
+    let newUserRef: any;
+    return new Promise((resolve, reject) => {
+      if (!task.sponsor) {
+        reject(`missing sponsor info`);
+        return;
+      }
 
-    let newUser = this.buildNewUser(task.phone, undefined, undefined, undefined, _.merge(task.sponsor, {referralCode: task.referralCode}));
-    let newUserRef = this.db.ref('/users').push(newUser);
-    task.userId = newUserRef.key;
-    return newUserRef; // this is a promise
+      let newUser = this.buildNewUser(task.phone, undefined, undefined, undefined, task.sponsor);
+      newUserRef = this.db.ref('/users').push(newUser);
+      newUserRef.then(() => {
+        task.userId = newUserRef.key;
+        return self.incrementDownlineSize(newUser.sponsor);
+      }).then(() => {
+        resolve()
+      }, (error: any) => {
+        reject(error)
+      });
+    });
   }
 
   private processEmailAuthCodeGenerationQueue() {
@@ -403,13 +414,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
     let self = this;
     return new Promise((resolve, reject) => {
       self.lookupUsersByReferralCode(referralCode).then((matchingUsers: any) => {
-        let userIds: string[] = _.keys(matchingUsers);
-        let matchingUser: any = undefined;
-        if (userIds.length > 0) {
-          matchingUser = matchingUsers[userIds[0]];
-          matchingUser.userId = userIds[0];
-        }
-        resolve(matchingUser);
+        resolve(matchingUsers[0]);
       });
     });
   }
