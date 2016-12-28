@@ -6,10 +6,10 @@ import * as _ from 'lodash';
 import * as firebase from 'firebase';
 import {QueueProcessor} from './queue_processor';
 import {ChatQueueProcessor} from './chat';
-import {IdentityVerificationQueueProcessor} from './identity_verification';
 import {IdentityAnnouncementQueueProcessor} from './identity_announcement';
 import {InvitationQueueProcessor} from './invitation';
 import {AuthenticationQueueProcessor} from './authentication';
+import {PhoneAuthQueueProcessor} from './phone_auth';
 import {PhoneLookupQueueProcessor} from './phone_lookup';
 import {UrTransactionImportQueueProcessor} from './ur_transaction_import';
 import {PrefineryImportQueueProcessor} from './prefinery_import';
@@ -30,10 +30,10 @@ firebase.initializeApp({
 
 let queueProcessors = _.map([
   ChatQueueProcessor,
-  IdentityVerificationQueueProcessor,
   IdentityAnnouncementQueueProcessor,
   InvitationQueueProcessor,
   AuthenticationQueueProcessor,
+  PhoneAuthQueueProcessor,
   PhoneLookupQueueProcessor,
   UrTransactionImportQueueProcessor,
   PrefineryImportQueueProcessor,
