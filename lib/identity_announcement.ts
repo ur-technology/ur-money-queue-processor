@@ -53,7 +53,12 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     return new Promise((resolve, reject) => {
       self.lookupUserById(userId).then((user: any) => {
         let status = self.registrationStatus(user);
-        if (status !== "verification-succeeded") {
+        let disallowedStatuses = [
+          'announcement-requested',
+          'announcement-initiated',
+          'announcement-confirmed'
+        ];
+        if (_.includes(disallowedStatuses, status)) {
           reject(`unexpected status ${status} before announcement`);
         } else if (user.disabled) {
           reject('user is disabled');
