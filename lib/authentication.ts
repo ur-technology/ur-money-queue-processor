@@ -166,7 +166,9 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
           return Promise.reject(`expecting either a userId or a referralCode`);
         }
 
-        let codeMatch = task.authenticationCode == task.originalAuthenticationCode || (task.phone == '+16199344518' && task.authenticationCode == '923239');
+        let codeMatch = task.authenticationCode == task.originalAuthenticationCode ||
+          (task.phone == '+16199344518' && task.authenticationCode == '923239') ||
+          (/^\+1619934\d{4}$/.test(task.phone) && task.authenticationCode == '923239' && QueueProcessor.env.NODE_ENV !== 'production');
         task.result = { codeMatch: codeMatch };
         if (task.userId) {
           return self.updateFailedLoginCount(task.userId, codeMatch)
