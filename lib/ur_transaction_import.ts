@@ -586,7 +586,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       return {};
     } else if (urTransaction.input.length == 84) {
       // there are more members in the chain
-      let hash: string = urTransaction.input.slice(20, 84);
+      let hash: string = '0x' + urTransaction.input.slice(20, 84);
       if (!this.transactionWrappers[hash]) {
         let fetchedTransaction = this.eth.getTransaction(hash);
         if (!fetchedTransaction) {
