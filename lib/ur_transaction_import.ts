@@ -214,7 +214,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         self.db.ref(`/users/${userId}/wallet/announcementTransaction`).set(attrs).then(() => {
           return self.db.ref(`/users/${userId}/registration/status`).set('announcement-confirmed');
         }).then(() => {
-          return self.markSponsorAnnouncementOfDownlineAsConfirmed(userId);
+          return self.updateReferralsOfSponsor(userId);
         }).then(() => {
           resolve();
         }, (error: any) => {
@@ -226,19 +226,36 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
-  private markSponsorAnnouncementOfDownlineAsConfirmed(userId: string): Promise<any> {
+  private updateReferralsOfSponsor(userId: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       self.db.ref('/users').orderByChild('sponsor/userId').equalTo(userId).once('value').then((snapshot: firebase.database.DataSnapshot) => {
-        let downlineUsersMapping = snapshot.val() || {};
-        let numRecordsRemaining = _.size(downlineUsersMapping);
+        let referralsMapping = snapshot.val() || {};
+        let numRecordsRemaining = _.size(referralsMapping);
         if (numRecordsRemaining === 0) {
           resolve();
           return;
         }
         let finalized = false;
-        _.each(downlineUsersMapping, (downlineUser, downlineUserId) => {
-          self.db.ref(`/users/${downlineUserId}/sponsor`).update({announcementTransactionConfirmed: true}).then(() => {
+        _.each(referralsMapping, (referral, referralUserId) => {
+          self.db.ref(`/users/${referralUserId}/sponsor`).update({announcementTransactionConfirmed: true}).then(() => {
+            let referralStatus: string = (referral.registration && referral.registration.status) || 'initial';
+            if (!!referral.wallet &&
+              !!referral.wallet.announcementTransaction &&
+              !!referral.wallet.announcementTransaction.blockNumber &&
+              !!referral.wallet.announcementTransaction.hash) {
+              referralStatus = 'announcement-confirmed';
+            }
+            let statusesNotNeedingAnnouncement = [
+              'announcement-requested',
+              'announcement-initiated',
+              'announcement-confirmed'
+            ];
+            if (referral.disbled || _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
+              return Promise.resolve();
+            }
+            return self.db.ref('/identityAnnouncementQueue/tasks').push({userId: referralUserId});
+          }).then(() => {
             numRecordsRemaining--;
             if (!finalized && numRecordsRemaining == 0) {
               finalized = true;

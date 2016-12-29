@@ -42,7 +42,11 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
       }).then(() => {
         self.resolveTask(queue, task, resolve, reject);
       }, (error) => {
-        self.rejectTask(queue, task, `got error during identity verification announcement: ${error}`, reject);
+        if (error === 'sponsor-lacks-announcement-transaction') {
+          self.resolveTask(queue, task, resolve, reject);
+        } else {
+          self.rejectTask(queue, task, `got error during identity verification announcement: ${error}`, reject);
+        }
       });
     });
     return [queue];
@@ -90,7 +94,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
         } else if (sponsor.disabled) {
           reject('Sponsor is disabled');
         } else if (!sponsor.wallet || !sponsor.wallet.announcementTransaction || !sponsor.wallet.announcementTransaction.blockNumber || !sponsor.wallet.announcementTransaction.hash) {
-          reject('Could not find complete announcementTransaction for sponsor');
+          reject('sponsor-lacks-announcement-transaction');
         } else {
           resolve(sponsor.wallet.announcementTransaction);
         }
