@@ -105,17 +105,17 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
             self.rejectTask(queue, task, error, reject);
           });
 
-        } else if (task.referralCode) {
+        } else if (task.sponsorReferralCode) {
 
-          self.lookupUserByReferralCode(task.referralCode).then((sponsor: any) => {
+          self.lookupUserByReferralCode(task.sponsorReferralCode).then((sponsor: any) => {
             if (!sponsor) {
-              log.info(`  no sponsor found with referral code ${task.referralCode}`);
+              log.info(`  no sponsor found with referral code ${task.sponsorReferralCode}`);
               resolveAsNotInvited();
               return;
             }
 
             if (sponsor.disabled) {
-              log.info(`  sponsor ${sponsor.userId} with referral code ${task.referralCode} found, but was disabled`);
+              log.info(`  sponsor ${sponsor.userId} with referral code ${task.sponsorReferralCode} found, but was disabled`);
               resolveAsNotInvited();
               return;
             }
@@ -145,8 +145,8 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
 
-      if (!task.userId && !task.referralCode) {
-        self.rejectTask(queue, task, 'expecting either a userId or a referralCode', reject);
+      if (!task.userId && !task.sponsorReferralCode) {
+        self.rejectTask(queue, task, 'expecting either a userId or a sponsorReferralCode', reject);
         return;
       }
 
@@ -155,8 +155,8 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       p.then(() => {
         if (task.email && codeMatch) {
           return self.db.ref(`/users/${task.userId}`).update({ phone: task.phone });
-        } else if (!task.userId && task.referralCode && codeMatch) {
-          return self.createNewUserBasedOnReferralCode(task);
+        } else if (!task.userId && task.sponsorReferralCode && codeMatch) {
+          return self.createNewUserBasedOnSponsorReferralCode(task);
         } else {
           return Promise.resolve();
         }
@@ -179,7 +179,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     return queue;
   }
 
-  private createNewUserBasedOnReferralCode(task: any): Promise<any> {
+  private createNewUserBasedOnSponsorReferralCode(task: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       if (!task.sponsorUserId) {
