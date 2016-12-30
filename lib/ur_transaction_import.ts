@@ -251,7 +251,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
               'announcement-initiated',
               'announcement-confirmed'
             ];
-            if (referral.disbled || _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
+            if (referral.disbled || !referral.wallet || !referral.wallet.address || _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
               return Promise.resolve();
             }
             return self.db.ref('/identityAnnouncementQueue/tasks').push({userId: referralUserId});
