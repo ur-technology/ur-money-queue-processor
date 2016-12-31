@@ -327,8 +327,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       case 'earned':
         if (userTransaction.level == 0) {
           return `You earned a bonus of ${ amountInUr } UR for signing up`;
+        } else if (userTransaction.level == 1 || !(userTransaction.sender && userTransaction.sender.name)) {
+          return `You earned a bonus of ${ amountInUr } UR for referring ${ userTransaction.receiver.name }`;
+        } else {
+          return `You earned a bonus of ${ amountInUr } UR because ${userTransaction.sender.name} referred ${ userTransaction.receiver.name }`;
         }
-        return `You earned a bonus of ${ amountInUr } UR for referring ${ userTransaction.receiver.name }`;
     }
   }
 
