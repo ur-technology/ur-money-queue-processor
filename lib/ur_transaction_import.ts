@@ -191,6 +191,8 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
           return self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).set(userTransaction);
         }).then(() => {
+          return self.updateCurrentBalance(user);
+        }).then(() => {
           return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
         }).then(() => {
           return self.recordAnnouncementInfoIfApplicable(userTransaction.urTransaction, addressToUserMapping, userId);
@@ -202,6 +204,29 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }, (error: string) => {
         reject(error);
       });
+    });
+  }
+
+  private updateCurrentBalance(user: any): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      if (!user.wallet || !user.wallet.address) {
+        reject(`no user address found`);
+        return;
+      }
+
+      let currentBalance: BigNumber;
+      try {
+        currentBalance = QueueProcessor.web3().eth.getBalance(user.wallet.address);
+      } catch(error) {
+        reject(`got error when attempting to get balance for address ${user.wallet.address} and user ${user.userId}`);
+        return;
+      }
+      self.db.ref(`/users/${user.userId}/currentBalance`).set(currentBalance.toFixed()).then(() => {
+        resolve();
+      }, (error: any) => {
+        reject(`could not update current balance for user ${user.userId}: ${error}`);
+      })
     });
   }
 
