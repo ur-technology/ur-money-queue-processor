@@ -10,7 +10,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     return [
       this.ensureQueueSpecLoaded("/phoneAuthQueue/specs/code_generation", {
         "in_progress_state": "code_generation_in_progress",
-        "finished_state": "code_generation_in_progress_finished",
+        "finished_state": "code_generation_finished",
         "error_state": "code_generation_error",
         "timeout": 5*60*1000
       }),
