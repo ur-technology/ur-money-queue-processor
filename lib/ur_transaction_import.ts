@@ -222,7 +222,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         reject(`got error when attempting to get balance for address ${user.wallet.address} and user ${user.userId}`);
         return;
       }
-      self.db.ref(`/users/${user.userId}/currentBalance`).set(currentBalance.toFixed()).then(() => {
+      self.db.ref(`/users/${user.userId}/wallet/currentBalance`).set(currentBalance.toFixed()).then(() => {
         resolve();
       }, (error: any) => {
         reject(`could not update current balance for user ${user.userId}: ${error}`);
