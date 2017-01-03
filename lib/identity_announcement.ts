@@ -130,7 +130,9 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           reject(`error sending announcement transaction ${announcementTransactionHash}: ${error}`);
           return;
         }
-
+        self.db.ref(`/users/${userId}/wallet/announcementTransaction`).set({
+          hash: announcementTransactionHash
+        });
         console.log(`successfully sent announcement transaction ${announcementTransactionHash} for user ${userId}`);
         resolve();
       });
