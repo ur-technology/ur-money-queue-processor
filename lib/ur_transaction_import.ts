@@ -193,7 +193,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }).then(() => {
           return self.updateCurrentBalance(user);
         }).then(() => {
-          return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
+          let blockNumber: number = userTransaction.urTransaction.blockNumber;
+          if (blockNumber && urTransaction.blockNumber < 497000) {
+            return Promise.resolve();
+          } else {
+            return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
+          }
         }).then(() => {
           return self.recordAnnouncementInfoIfApplicable(userTransaction.urTransaction, addressToUserMapping, userId);
         }).then(() => {
