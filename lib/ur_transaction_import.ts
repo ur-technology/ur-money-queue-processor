@@ -143,6 +143,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           type: self.userTransactionType(urTransaction, addressToUserMapping, userId),
           level: self.userTransactionLevel(urTransaction, addressToUserMapping, userId),
           sender: self.sender(urTransaction, addressToUserMapping),
+          referrer: self.referrer(urTransaction, addressToUserMapping),
           receiver: self.receiver(urTransaction, addressToUserMapping),
           createdAt: firebase.database.ServerValue.TIMESTAMP,
           createdBy: self.isAnnouncementTransaction(urTransaction) ? "UR Network" : "Unknown",
@@ -355,7 +356,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         } else if (userTransaction.level == 1 || !(userTransaction.sender && userTransaction.sender.name)) {
           return `You earned a bonus of ${ amountInUr } UR for referring ${ userTransaction.receiver.name }`;
         } else {
-          return `You earned a bonus of ${ amountInUr } UR because ${userTransaction.sender.name} referred ${ userTransaction.receiver.name }`;
+          return `You earned a bonus of ${ amountInUr } UR because ${userTransaction.referrer.name} referred ${ userTransaction.receiver.name }`;
         }
     }
   }
@@ -446,6 +447,18 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
   private sender(urTransaction: any, addressToUserMapping: any): any {
     let user: any = this.isAnnouncementTransaction(urTransaction) ? { name: "UR Network" } : ( addressToUserMapping[urTransaction.from] || { name: "Unknown User" } );
+    return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
+  }
+
+  private referrer(urTransaction: any, addressToUserMapping: any): any {
+    if (!this.isAnnouncementTransaction(urTransaction)) {
+      return null;
+    }
+    let referrerSignUpTransaction = this.referralTransaction(urTransaction);
+    if (referrerSignUpTransaction === {}) {
+      referrerSignUpTransaction == undefined;
+    }
+    let user: any = (referrerSignUpTransaction && addressToUserMapping[referrerSignUpTransaction.to]) || { name: "Unknown User" };
     return _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
   }
 
