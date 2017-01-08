@@ -52,7 +52,7 @@ export class PrefineryImportQueueProcessor extends QueueProcessor {
       setTimeout(() => {
         progress(50);
         self.loadCandidatesFromPrefinery(1).then(() => {
-          self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_import", delaySeconds: 45 }), resolve, reject, true);
+          self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_import", delaySeconds: 600 }), resolve, reject, true);
         });
       }, delaySeconds * 1000);
     });

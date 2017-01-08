@@ -68,7 +68,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           reject('user is disabled');
         } else if (!user.wallet || !user.wallet.address) {
           reject('user lacks wallet address');
-        } else if (!!user.wallet.announcementTransaction) {
+        } else if (user.wallet.announcementTransaction && user.wallet.announcementTransaction.blockNumber) {
           reject('user already has an announcement transaction');
         } else {
           resolve(user);

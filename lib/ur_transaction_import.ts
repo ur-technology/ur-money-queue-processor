@@ -415,6 +415,9 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       // import the first transaction in the array
       self.importUrTransaction(blockTimestamp, urTransaction).then(() => {
         // ...then import the remaining transactions
+        if (_.size(urTransactions) > 5) {
+          log.info(`imported one transaction - ${_.size(urTransactions) - 1} to go`);
+        }
         return self.importUrTransactionsInOrder(blockTimestamp, urTransactions.slice(1));
       }).then(() => {
         resolve();
