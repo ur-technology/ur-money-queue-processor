@@ -66,13 +66,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }
 
       self.importUrTransactions(blockNumber).then(() => {
-        // queue another task to import the next block
-        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+        self.ensureAnotherTaskInQueue(blockNumber + 1).then(() => {
           self.resolveTask(importQueue, task, resolve, reject, true);
         }, (error: string) => {
-          log.warn(`  unable to add task for next block to queue: ${error}`)
+          log.warn(error);
           self.resolveTask(importQueue, task, resolve, reject, true);
-        });
+        })
       }, (error) => {
         log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
         self.rejectTask(importQueue, task, error, reject, true);
@@ -80,6 +79,24 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
     return [waitQueue, importQueue];
   };
+
+  private ensureAnotherTaskInQueue(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let ref = self.db.ref(`/urTransactionImportQueue/tasks`).orderByChild('_state').equalTo('ready_to_import');
+      ref.once('value').then((snapshot: firebase.database.DataSnapshot) => {
+        if (snapshot.exists()) {
+          resolve();
+        } else {
+          self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+            resolve();
+          }, (error: string) => {
+            reject(`  unable to add task for next block to queue: ${error}`);
+          });
+        }
+      });
+    });
+  }
 
   private setUpUrTransactionImportQueue(): Promise<any> {
     let self = this;
