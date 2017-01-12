@@ -66,7 +66,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }
 
       self.importUrTransactions(blockNumber).then(() => {
-        self.ensureAnotherTaskInQueue(blockNumber).then(() => {
+        self.ensureAnotherTaskInQueue(blockNumber + 1).then(() => {
           self.resolveTask(importQueue, task, resolve, reject, true);
         }, (error: string) => {
           log.warn(error);
@@ -80,7 +80,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return [waitQueue, importQueue];
   };
 
-  private ensureAnotherTaskInQueue(priorBlockNumber: number): Promise<any> {
+  private ensureAnotherTaskInQueue(blockNumber: number): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       let ref = self.db.ref(`/urTransactionImportQueue/tasks`).orderByChild('_state').equalTo('ready_to_import');
@@ -88,8 +88,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         if (snapshot.exists()) {
           resolve();
         } else {
-          let nextBlockNumber = self.getNextBlockNumber(priorBlockNumber);
-          self.db.ref(`/urTransactionImportQueue/tasks/${nextBlockNumber}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+          self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
             resolve();
           }, (error: string) => {
             reject(`  unable to add task for next block to queue: ${error}`);
@@ -97,20 +96,6 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }
       });
     });
-  }
-
-  private getNextBlockNumber(priorBlockNumber: number): number {
-    let networkBlockNumber: number = this.eth.blockNumber;
-    if (priorBlockNumber >= networkBlockNumber) {
-      return priorBlockNumber + 1;
-    }
-    for (let blockNumber: number = priorBlockNumber + 1; blockNumber <= networkBlockNumber; blockNumber++) {
-      let transactionCount = (this.eth.getBlock(blockNumber, true).transactions || []).length;
-      if (transactionCount) {
-        return blockNumber;
-      }
-    }
-    return networkBlockNumber + 1;
   }
 
   private setUpUrTransactionImportQueue(): Promise<any> {
