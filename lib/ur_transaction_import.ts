@@ -422,7 +422,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private importUrTransaction(blockTimestamp: number, urTransaction: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      log.info(`  starting import of transaction ${urTransactions.transactionIndex}`);
+      log.info(`  starting import of transaction ${urTransaction.transactionIndex}`);
 
       let addresses = self.addressesAssociatedWithTransaction(urTransaction);
       if (addresses === undefined) {
