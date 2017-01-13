@@ -36,7 +36,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let self = this;
     let queueRef = self.db.ref("/urTransactionImportQueue");
 
-    let waitOptions = { 'specId': 'wait', 'numWorkers': 1, sanitize: false };
+    let waitOptions = { 'specId': 'wait', 'numWorkers': 5, sanitize: false };
     let waitQueue = new self.Queue(queueRef, waitOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(waitQueue, task, true);
       let blockNumber: number = parseInt(task._id);
@@ -45,7 +45,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }, 3 * 1000);
     });
 
-    let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
+    let importOptions = { 'specId': 'import', 'numWorkers': 5, sanitize: false };
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(importQueue, task);
       let blockNumber: number = parseInt(task._id);
@@ -57,7 +57,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
       let lastMinedBlockNumber = self.eth.blockNumber;
       if (blockNumber > lastMinedBlockNumber) {
-        if (blockNumber - lastMinedBlockNumber > 1) {
+        if (blockNumber - lastMinedBlockNumber > 5) {
           log.warn(`  ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
         }
         // let's wait for more blocks to get mined
@@ -67,7 +67,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
       self.getBlockAndImportUrTransactions(blockNumber).then(() => {
         // queue another task to import the next block
-        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 5}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
           self.resolveTask(importQueue, task, resolve, reject);
         }, (error: string) => {
           log.warn(`  unable to add task for next block to queue: ${error}`)
@@ -91,7 +91,16 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           resolve();
         } else {
           let startingBlock = QueueProcessor.env.UR_TRANSACTION_IMPORT_STARTING_BLOCK_NUMBER || 1;
+          startingBlock = startingBlock - (startingBlock % 5) + 1; // start at multiple of 5 plus 1
           tasksRef.child(startingBlock).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+            return tasksRef.child(startingBlock + 1).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
+          }).then(() => {
+            return tasksRef.child(startingBlock + 2).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
+          }).then(() => {
+            return tasksRef.child(startingBlock + 3).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
+          }).then(() => {
+            return tasksRef.child(startingBlock + 4).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
+          }).then(() => {
             resolve();
           }, (error: string) => {
             reject(error);
@@ -388,7 +397,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           return
         }
 
-        log.info(`  importing ${_.size(urTransactions)} transactions`);
+        log.info(`  about to import ${_.size(urTransactions)} transactions from block ${blockNumber}`);
         self.importUrTransactions(block.timestamp, urTransactions).then(() => {
           resolve();
         }, (error: string) => {
@@ -422,7 +431,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private importUrTransaction(blockTimestamp: number, urTransaction: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      log.info(`  starting import of transaction ${urTransaction.transactionIndex}`);
+      log.info(`  starting import of transaction ${urTransaction.transactionIndex} from block ${urTransaction.blockNumber}`);
 
       let addresses = self.addressesAssociatedWithTransaction(urTransaction);
       if (addresses === undefined) {
