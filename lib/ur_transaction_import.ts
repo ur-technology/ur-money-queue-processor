@@ -388,6 +388,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           return
         }
 
+        log.info(`  importing ${_.size(urTransactions)} transactions`);
         self.importUrTransactions(block.timestamp, urTransactions).then(() => {
           resolve();
         }, (error: string) => {
@@ -409,7 +410,6 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       // import the first transaction in the array
       self.importUrTransaction(blockTimestamp, urTransaction).then(() => {
         // ...then import the remaining transactions
-        log.info(`imported one transaction - ${_.size(urTransactions) - 1} to go`);
         return self.importUrTransactions(blockTimestamp, urTransactions.slice(1));
       }).then(() => {
         resolve();
@@ -422,6 +422,8 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private importUrTransaction(blockTimestamp: number, urTransaction: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
+      log.info(`  starting import of transaction ${urTransactions.transactionIndex}`);
+
       let addresses = self.addressesAssociatedWithTransaction(urTransaction);
       if (addresses === undefined) {
         reject(`could not get associated addresses`);
