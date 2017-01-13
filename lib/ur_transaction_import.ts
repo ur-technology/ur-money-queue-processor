@@ -47,11 +47,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
 
     let importOptions = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
     let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(importQueue, task, true);
+      self.startTask(importQueue, task);
       let blockNumber: number = parseInt(task._id);
       self.eth = QueueProcessor.web3().eth;
       if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject, true);
+        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject);
         return;
       }
 
@@ -61,21 +61,21 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
           log.warn(`  ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
         }
         // let's wait for more blocks to get mined
-        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject, true);
+        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
         return;
       }
 
       self.importUrTransactions(blockNumber).then(() => {
         // queue another task to import the next block
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 1}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-          self.resolveTask(importQueue, task, resolve, reject, true);
+          self.resolveTask(importQueue, task, resolve, reject);
         }, (error: string) => {
           log.warn(`  unable to add task for next block to queue: ${error}`)
-          self.resolveTask(importQueue, task, resolve, reject, true);
+          self.resolveTask(importQueue, task, resolve, reject);
         });
       }, (error) => {
         log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
-        self.rejectTask(importQueue, task, error, reject, true);
+        self.rejectTask(importQueue, task, error, reject);
       });
     });
     return [waitQueue, importQueue];
@@ -415,9 +415,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       // import the first transaction in the array
       self.importUrTransaction(blockTimestamp, urTransaction).then(() => {
         // ...then import the remaining transactions
-        if (_.size(urTransactions) > 5) {
-          log.info(`imported one transaction - ${_.size(urTransactions) - 1} to go`);
-        }
+        log.info(`imported one transaction - ${_.size(urTransactions) - 1} to go`);
         return self.importUrTransactionsInOrder(blockTimestamp, urTransactions.slice(1));
       }).then(() => {
         resolve();
