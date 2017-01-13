@@ -18,14 +18,14 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         "start_state": "ready_to_import",
         "in_progress_state": "processing",
         "error_state": "error",
-        "timeout": 120000,
+        "timeout": 60 * 60 * 1000,
         "retries": 5
       }),
       this.ensureQueueSpecLoaded("/urTransactionImportQueue/specs/wait", {
         "start_state": "ready_to_wait",
         "in_progress_state": "waiting",
         "error_state": "error",
-        "timeout": 120000,
+        "timeout": 60 * 60 * 1000,
         "retries": 5
       }),
       this.setUpUrTransactionImportQueue()
@@ -65,7 +65,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         return;
       }
 
-      self.getBlockAndImportUrTransactions(blockNumber).then(() => {
+      self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
         // queue another task to import the next block
         self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 5}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
           self.resolveTask(importQueue, task, resolve, reject);
@@ -376,7 +376,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return _.uniq(addresses) as string[];
   }
 
-  private getBlockAndImportUrTransactions(blockNumber: number): Promise<any> {
+  private getBlockAndImportUrTransactions(blockNumber: number, progress: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
 
@@ -392,13 +392,14 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         }
 
         let urTransactions = _.sortBy(block.transactions, 'transactionIndex');
-        if (_.isEmpty(urTransactions)) {
+        let numTransactionsInBlock = _.size(urTransactions);
+        if (numTransactionsInBlock === 0) {
           resolve();
           return
         }
 
         log.info(`  about to import ${_.size(urTransactions)} transactions from block ${blockNumber}`);
-        self.importUrTransactions(block.timestamp, urTransactions).then(() => {
+        self.importUrTransactions(block.timestamp, urTransactions, numTransactionsInBlock, progress).then(() => {
           resolve();
         }, (error: string) => {
           reject(error);
@@ -407,7 +408,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     });
   }
 
-  private importUrTransactions(blockTimestamp: number, urTransactions: any[]): Promise<any> {
+  private importUrTransactions(blockTimestamp: number, urTransactions: any[], numTransactionsInBlock: number, progress: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       let urTransaction = urTransactions[0];
@@ -417,9 +418,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       }
 
       // import the first transaction in the array
+      log.info(`  starting to import transaction ${urTransaction.transactionIndex + 1} of ${numTransactionsInBlock} from block ${urTransaction.blockNumber}`);
       self.importUrTransaction(blockTimestamp, urTransaction).then(() => {
         // ...then import the remaining transactions
-        return self.importUrTransactions(blockTimestamp, urTransactions.slice(1));
+        progress(Math.round(100*(numTransactionsInBlock - urTransactions.length + 1)/numTransactionsInBlock));
+        return self.importUrTransactions(blockTimestamp, urTransactions.slice(1), numTransactionsInBlock, progress);
       }).then(() => {
         resolve();
       }, (error) => {
@@ -431,8 +434,6 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private importUrTransaction(blockTimestamp: number, urTransaction: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      log.info(`  starting import of transaction ${urTransaction.transactionIndex} from block ${urTransaction.blockNumber}`);
-
       let addresses = self.addressesAssociatedWithTransaction(urTransaction);
       if (addresses === undefined) {
         reject(`could not get associated addresses`);
