@@ -1,4 +1,3 @@
-import * as firebase from 'firebase';
 import * as _ from 'lodash';
 import * as log from 'loglevel';
 import {QueueProcessor} from './queue_processor';

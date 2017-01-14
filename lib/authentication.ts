@@ -191,7 +191,7 @@ export class AuthenticationQueueProcessor extends QueueProcessor {
         if (task.result.codeMatch) {
           // authentication succeeded: create auth token so user can login
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} matches actual authenticationCode; sending authToken to user`);
-          task.result.authToken = firebase.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
+          task.result.authToken = self.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
         } else {
           log.debug(`  originalAuthenticationCode ${task.originalAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
         }

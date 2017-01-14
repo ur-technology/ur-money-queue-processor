@@ -5,10 +5,15 @@ import * as _ from 'lodash';
 import * as log from 'loglevel';
 
 export class QueueProcessor {
-  env: any;
   db: any;
+  auth: any;
   Queue: any;
   _enabled: boolean;
+
+  static db: any;
+  static auth: any;
+  static Queue: any;
+
   static env: any;
   static _web3: any;
 
@@ -22,8 +27,9 @@ export class QueueProcessor {
   }
 
   constructor() {
-    this.db = firebase.database();
-    this.Queue = require('firebase-queue');
+    this.db = QueueProcessor.db;
+    this.auth = QueueProcessor.auth;
+    this.Queue = QueueProcessor.Queue;
   }
 
   enabled(): boolean {

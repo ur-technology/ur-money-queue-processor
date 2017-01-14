@@ -13,23 +13,18 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private priorChanges: any[];
 
   init(): Promise<any>[] {
-    return [
-      this.ensureQueueSpecLoaded("/urTransactionImportQueue/specs/import", {
-        "start_state": "ready_to_import",
-        "in_progress_state": "processing",
-        "error_state": "error",
+    let promises =_.map([1,2,3,4,5], (i) => {
+      return this.ensureQueueSpecLoaded(`/urTransactionImportQueue/specs/import_${i}`, {
+        "start_state": `ready_to_import_${i}`,
+        "in_progress_state": `processing_${i}`,
+        "error_state": `error_${i}`,
         "timeout": 60 * 60 * 1000,
-        "retries": 5
-      }),
-      this.ensureQueueSpecLoaded("/urTransactionImportQueue/specs/wait", {
-        "start_state": "ready_to_wait",
-        "in_progress_state": "waiting",
-        "error_state": "error",
-        "timeout": 60 * 60 * 1000,
-        "retries": 5
-      }),
-      this.setUpUrTransactionImportQueue()
-    ];
+        "retries": 5,
+        "starting_block_number": 1
+      });
+    });
+    promises.push(this.setUpUrTransactionImportQueue());
+    return promises;
   }
 
   process(): any[] {
@@ -90,7 +85,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         if (snapshot.exists()) {
           resolve();
         } else {
-          let startingBlock = QueueProcessor.env.UR_TRANSACTION_IMPORT_STARTING_BLOCK_NUMBER || 1;
+          let startingBlockNumber =
           startingBlock = startingBlock - (startingBlock % 5) + 1; // start at multiple of 5 plus 1
           tasksRef.child(startingBlock).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
             return tasksRef.child(startingBlock + 1).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });

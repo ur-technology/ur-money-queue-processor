@@ -3,7 +3,6 @@
 import * as dotenv from 'dotenv';
 import * as log from 'loglevel';
 import * as _ from 'lodash';
-import * as firebase from 'firebase';
 import {QueueProcessor} from './queue_processor';
 import {ChatQueueProcessor} from './chat';
 import {IdentityAnnouncementQueueProcessor} from './identity_announcement';
@@ -23,10 +22,17 @@ log.setDefaultLevel(process.env.LOG_LEVEL || "info")
 
 log.info(`starting with NODE_ENV ${process.env.NODE_ENV} and FIREBASE_PROJECT_ID ${process.env.FIREBASE_PROJECT_ID}`);
 
-firebase.initializeApp({
-  serviceAccount: `./serviceAccountCredentials.${process.env.FIREBASE_PROJECT_ID}.json`,
+let serviceAccount = require(`../serviceAccountCredentials.${process.env.FIREBASE_PROJECT_ID}.json`);
+let admin = require("firebase-admin");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
   databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
 });
+
+QueueProcessor.env = process.env;
+QueueProcessor.db = admin.database();
+QueueProcessor.auth = admin.auth();
+QueueProcessor.Queue = require('firebase-queue');
 
 let queueProcessors = _.map([
   ChatQueueProcessor,
@@ -41,8 +47,6 @@ let queueProcessors = _.map([
 ], (queueProcessorClass) => {
   return new queueProcessorClass();
 });
-
-QueueProcessor.env = process.env;
 
 let initializerPromises = _.flatten(_.map(queueProcessors, (p) => { return p.enabled() ? p.init() : []; }));
 
