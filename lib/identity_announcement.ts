@@ -166,7 +166,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
         value: 1,
         data: this.transactionDataField(sponsorAnnouncementTransaction),
         gasPrice: gasPrice.toNumber(),
-        gasLimit: gasLimit
+        // gasLimit: gasLimit
       };
       announcementTransaction.gas = self.eth.estimateGas(announcementTransaction); // TODO: handle failure here
       resolve(announcementTransaction);
