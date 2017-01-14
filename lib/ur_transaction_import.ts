@@ -51,7 +51,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       let blockNumber: number = parseInt(task._id);
       self.eth = QueueProcessor.web3().eth;
       if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.rejectTask(importQueue, task, 'unable to get connection to transaction relay', reject);
+        self.rejectTask(importQueue, task, 'unable to get connection to local gur client', reject);
         return;
       }
 
