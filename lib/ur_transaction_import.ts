@@ -265,16 +265,11 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         _.each(referralsMapping, (referral, referralUserId) => {
           self.db.ref(`/users/${referralUserId}/sponsor`).update({announcementTransactionConfirmed: true}).then(() => {
             let referralStatus: string = (referral.registration && referral.registration.status) || 'initial';
-            let statusesNotNeedingAnnouncement = [
-              'announcement-requested',
-              'announcement-initiated',
-              'announcement-confirmed'
-            ];
             if (referral.disbled ||
               !referral.wallet ||
               !referral.wallet.address ||
-              !!referral.wallet.announcementTransaction.blockNumber ||
-              _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
+              (!!referral.wallet.announcementTransaction && !!referral.wallet.announcementTransaction.blockNumber) ||
+              /^announcement-/.test(referralStatus)) {
               return Promise.resolve();
             }
             return self.db.ref('/identityAnnouncementQueue/tasks/${referralUserId}').set({userId: referralUserId});
