@@ -161,14 +161,16 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           return Promise.resolve();
         }
       }).then(() => {
-        task.result = { codeMatch: codeMatch };
         if (codeMatch) {
           // authentication succeeded: create auth token so user can login
           log.debug(`  submittedAuthenticationCode ${task.submittedAuthenticationCode} matches actual authenticationCode; sending authToken to user`);
-          task.result.authToken = self.auth().createCustomToken(task.userId, { some: "arbitrary", task: "here" });
+          return self.auth.createCustomToken(task.userId, { some: "arbitrary", task: "here" });
         } else {
           log.debug(`  submittedAuthenticationCode ${task.submittedAuthenticationCode} does not match actual authenticationCode ${task.authenticationCode}`);
+          return Promise.resolve(undefined);
         }
+      }).then((customToken: string) => {
+        task.result = { codeMatch: codeMatch, authToken: customToken || null };
         task._new_state = 'code_matching_finished';
         self.resolveTask(queue, task, resolve, reject);
       }, (error: any) => {
