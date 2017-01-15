@@ -10,62 +10,62 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   private TRANSACTION_WRAPPERS_LIMIT = 5000;
   private priorHash: string;
   private priorChanges: any[];
+  private numTaskGroups: number = parseInt(QueueProcessor.env.UR_TRANSACTION_IMPORT_NUM_TASK_GROUPS);
+  private taskGroupIndex: number;
 
   init(): Promise<any>[] {
     return [
       this.ensureQueueSpecLoaded("/urTransactionImportQueue/specs/import", {
         "in_progress_state": "in_progress",
         "error_state": "error",
-         "timeout": 60 * 60 * 1000,
+        "timeout": 60 * 60 * 1000,
         "retries": 5,
         "starting_block_number": 1
       }),
-      this.setUpUrTransactionImportQueue(1),
-      this.setUpUrTransactionImportQueue(2),
-      this.setUpUrTransactionImportQueue(3),
-      this.setUpUrTransactionImportQueue(4),
-      this.setUpUrTransactionImportQueue(5)
+      this.setUpUrTransactionImportQueue()
     ];
   }
 
   process(): any[] {
     let self = this;
 
-    return _.map([1,2,3,4,5], (index) => {
-      let queueDescriptor = {
-        tasksRef: self.db.ref(`/urTransactionImportQueue/tasks/${index}`),
-        specsRef: self.db.ref(`/urTransactionImportQueue/specs`)
+    if (!self.taskGroupIndex) {
+      return [Promise.resolve()];
+    }
+
+    let queueDescriptor = {
+      tasksRef: self.db.ref(`/urTransactionImportQueue/tasks/${self.taskGroupIndex}`),
+      specsRef: self.db.ref(`/urTransactionImportQueue/specs`)
+    }
+    let options = { specId: 'import', numWorkers: 1, sanitize: false };
+    let queue = new self.Queue(queueDescriptor, options, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(queue, task);
+      let blockNumber: number = parseInt(task._id);
+      if (!QueueProcessor.web3().isConnected() || !QueueProcessor.web3().eth) {
+        self.rejectTask(queue, task, 'unable to get connection to local gur client', reject);
+        return;
       }
-      let options = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
-      let queue = new self.Queue(queueDescriptor, options, (task: any, progress: any, resolve: any, reject: any) => {
-        self.startTask(queue, task);
-        let blockNumber: number = parseInt(task._id);
-        if (!QueueProcessor.web3().isConnected() || !QueueProcessor.web3().eth) {
-          self.rejectTask(queue, task, 'unable to get connection to local gur client', reject);
-          return;
-        }
 
-        self.waitUntilBlockReady(blockNumber).then(() => {
-          progress(1);
-          self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
-            // queue a task to import the next block
-            self.getNextBlockNumber(blockNumber).then((nextBlockNumber) => {
-              self.db.ref(`/urTransactionImportQueue/tasks/${index}/${nextBlockNumber}`).set({createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-                self.resolveTask(queue, task, resolve, reject);
-              }, (error: string) => {
-                log.warn(`  unable to add task for next block to queue: ${error}`)
-                self.resolveTask(queue, task, resolve, reject);
-              });
-            })
-          }, (error) => {
-            log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
-            self.rejectTask(queue, task, error, reject);
-          });
+      self.waitUntilBlockReady(blockNumber).then(() => {
+        progress(1);
+        self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
+          // queue a task to import the next block
+          self.getNextBlockNumber(blockNumber).then((nextBlockNumber) => {
+            self.db.ref(`/urTransactionImportQueue/tasks/${self.taskGroupIndex}/${nextBlockNumber}`).set({createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+              self.resolveTask(queue, task, resolve, reject);
+            }, (error: string) => {
+              log.warn(`  unable to add task for next block to queue: ${error}`)
+              self.resolveTask(queue, task, resolve, reject);
+            });
+          })
+        }, (error) => {
+          log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
+          self.rejectTask(queue, task, error, reject);
         });
-
       });
-      return queue;
+
     });
+    return queue;
   };
 
   private waitUntilBlockReady(blockNumber: number): Promise<any> {
@@ -87,25 +87,27 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     return new Promise((resolve, reject) => {
       let ref = self.db.ref(`/urTransactionImportQueue/specs/import/starting_block_number`);
       ref.once('value').then((snapshot: firebase.database.DataSnapshot) => {
-        let index = ((lastBlockNumber - 1) % 5) + 1;
         let startingBlockNumber = snapshot.val() || 1;
-        let adjustedStartingBlockNumber = startingBlockNumber - ((startingBlockNumber - 1) % 5) + index - 1;
-        resolve(_.max([lastBlockNumber + 5, adjustedStartingBlockNumber]));
+        let adjustedStartingBlockNumber = startingBlockNumber - ((startingBlockNumber - 1) % self.numTaskGroups) + self.taskGroupIndex - 1;
+        resolve(_.max([lastBlockNumber + self.numTaskGroups, adjustedStartingBlockNumber]));
       });
     });
   }
 
-  private setUpUrTransactionImportQueue(index: number): Promise<any> {
+  private setUpUrTransactionImportQueue(): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      // make sure there is at least one task in the queue
-      let tasksRef = self.db.ref(`/urTransactionImportQueue/tasks/${index}`);
+      // find the first sub-queue that is missing a record
+      let hostName = require('os').hostname();
+      let suffixMatches = (QueueProcessor.env.HOSTNAME || '').match(/-(\d+)$/) || [];
+      self.taskGroupIndex = suffixMatches[1] ? parseInt(suffixMatches[1]) : 1;
+
+      let tasksRef = self.db.ref(`/urTransactionImportQueue/tasks/${self.taskGroupIndex}`);
       tasksRef.once('value', (snapshot: firebase.database.DataSnapshot) => {
         if (snapshot.exists()) {
           return Promise.resolve();
         } else {
-          let startingBlockNumber = index;
-          return tasksRef.child(startingBlockNumber).set({createdAt: firebase.database.ServerValue.TIMESTAMP });
+          return tasksRef.child(self.taskGroupIndex).set({createdAt: firebase.database.ServerValue.TIMESTAMP });
         }
       }).then(() => {
         resolve();

@@ -15,7 +15,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node build/main.js",
-    "debug": "killall -9 node; ./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node-debug --web-host=0.0.0.0 build/main.js",
+    "debug": "killall -9 node; ./node_modules/.bin/tsc --module commonjs --outDir build/ --noImplicitAny --sourceMap --target ES5 lib/*.ts && node --inspect --debug-brk build/main.js",
     "postinstall": "./node_modules/.bin/typings install"
   },
   "author": "",
