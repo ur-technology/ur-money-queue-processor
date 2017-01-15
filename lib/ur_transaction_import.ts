@@ -29,15 +29,12 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
   process(): any[] {
     let self = this;
 
-    if (!self.taskGroupIndex) {
-      return [Promise.resolve()];
-    }
-
     let queueDescriptor = {
       tasksRef: self.db.ref(`/urTransactionImportQueue/tasks/${self.taskGroupIndex}`),
       specsRef: self.db.ref(`/urTransactionImportQueue/specs`)
     }
     let options = { specId: 'import', numWorkers: 1, sanitize: false };
+    log.info(`  watching import tasks in ${queueDescriptor.tasksRef.toString()}`);
     let queue = new self.Queue(queueDescriptor, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
       let blockNumber: number = parseInt(task._id);
