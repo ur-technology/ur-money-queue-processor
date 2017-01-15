@@ -6,101 +6,109 @@ import {BigNumber} from 'bignumber.js';
 import {sprintf} from 'sprintf-js';
 
 export class UrTransactionImportQueueProcessor extends QueueProcessor {
-  private eth: any;
   private transactionWrappers: any = {};
   private TRANSACTION_WRAPPERS_LIMIT = 5000;
   private priorHash: string;
   private priorChanges: any[];
 
   init(): Promise<any>[] {
-    let promises =_.map([1,2,3,4,5], (i) => {
-      return this.ensureQueueSpecLoaded(`/urTransactionImportQueue/specs/import_${i}`, {
-        "start_state": `ready_to_import_${i}`,
-        "in_progress_state": `processing_${i}`,
-        "error_state": `error_${i}`,
-        "timeout": 60 * 60 * 1000,
+    return [
+      this.ensureQueueSpecLoaded("/urTransactionImportQueue/specs/import", {
+        "in_progress_state": "in_progress",
+        "error_state": "error",
+         "timeout": 60 * 60 * 1000,
         "retries": 5,
         "starting_block_number": 1
-      });
-    });
-    promises.push(this.setUpUrTransactionImportQueue());
-    return promises;
+      }),
+      this.setUpUrTransactionImportQueue(1),
+      this.setUpUrTransactionImportQueue(2),
+      this.setUpUrTransactionImportQueue(3),
+      this.setUpUrTransactionImportQueue(4),
+      this.setUpUrTransactionImportQueue(5)
+    ];
   }
 
   process(): any[] {
     let self = this;
-    let queueRef = self.db.ref("/urTransactionImportQueue");
 
-    let waitOptions = { 'specId': 'wait', 'numWorkers': 5, sanitize: false };
-    let waitQueue = new self.Queue(queueRef, waitOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(waitQueue, task, true);
-      let blockNumber: number = parseInt(task._id);
-      setTimeout(() => {
-        self.resolveTask(waitQueue, _.merge(task, { _new_state: "ready_to_import" }), resolve, reject, true);
-      }, 3 * 1000);
-    });
-
-    let importOptions = { 'specId': 'import', 'numWorkers': 5, sanitize: false };
-    let importQueue = new self.Queue(queueRef, importOptions, (task: any, progress: any, resolve: any, reject: any) => {
-      self.startTask(importQueue, task);
-      let blockNumber: number = parseInt(task._id);
-      self.eth = QueueProcessor.web3().eth;
-      if (!QueueProcessor.web3().isConnected() || !self.eth) {
-        self.rejectTask(importQueue, task, 'unable to get connection to local gur client', reject);
-        return;
+    return _.map([1,2,3,4,5], (index) => {
+      let queueDescriptor = {
+        tasksRef: self.db.ref(`/urTransactionImportQueue/tasks/${index}`),
+        specsRef: self.db.ref(`/urTransactionImportQueue/specs`)
       }
-
-      let lastMinedBlockNumber = self.eth.blockNumber;
-      if (blockNumber > lastMinedBlockNumber) {
-        if (blockNumber - lastMinedBlockNumber > 5) {
-          log.warn(`  ready to import block number ${blockNumber} but lastMinedBlockNumber is ${lastMinedBlockNumber}`);
+      let options = { 'specId': 'import', 'numWorkers': 1, sanitize: false };
+      let queue = new self.Queue(queueDescriptor, options, (task: any, progress: any, resolve: any, reject: any) => {
+        self.startTask(queue, task);
+        let blockNumber: number = parseInt(task._id);
+        if (!QueueProcessor.web3().isConnected() || !QueueProcessor.web3().eth) {
+          self.rejectTask(queue, task, 'unable to get connection to local gur client', reject);
+          return;
         }
-        // let's wait for more blocks to get mined
-        self.resolveTask(importQueue, _.merge(task, { _new_state: "ready_to_wait" }), resolve, reject);
-        return;
-      }
 
-      self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
-        // queue another task to import the next block
-        self.db.ref(`/urTransactionImportQueue/tasks/${blockNumber + 5}`).set({ _state: "ready_to_import", updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-          self.resolveTask(importQueue, task, resolve, reject);
-        }, (error: string) => {
-          log.warn(`  unable to add task for next block to queue: ${error}`)
-          self.resolveTask(importQueue, task, resolve, reject);
+        self.waitUntilBlockReady(blockNumber).then(() => {
+          progress(1);
+          self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
+            // queue a task to import the next block
+            self.getNextBlockNumber(blockNumber).then((nextBlockNumber) => {
+              self.db.ref(`/urTransactionImportQueue/tasks/${index}/${nextBlockNumber}`).set({createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+                self.resolveTask(queue, task, resolve, reject);
+              }, (error: string) => {
+                log.warn(`  unable to add task for next block to queue: ${error}`)
+                self.resolveTask(queue, task, resolve, reject);
+              });
+            })
+          }, (error) => {
+            log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
+            self.rejectTask(queue, task, error, reject);
+          });
         });
-      }, (error) => {
-        log.warn(`  unable to import transactions for block ${blockNumber}: ${error}`);
-        self.rejectTask(importQueue, task, error, reject);
+
       });
+      return queue;
     });
-    return [waitQueue, importQueue];
   };
 
-  private setUpUrTransactionImportQueue(): Promise<any> {
+  private waitUntilBlockReady(blockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let checkAndWait: any = () => {
+        if (QueueProcessor.web3().eth.blockNumber >= blockNumber) {
+          resolve();
+        } else {
+          setTimeout(checkAndWait, 3 * 1000);
+        }
+      }
+      checkAndWait();
+    });
+  }
+
+  private getNextBlockNumber(lastBlockNumber: number): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      let ref = self.db.ref(`/urTransactionImportQueue/specs/import/starting_block_number`);
+      ref.once('value').then((snapshot: firebase.database.DataSnapshot) => {
+        let index = ((lastBlockNumber - 1) % 5) + 1;
+        let startingBlockNumber = snapshot.val() || 1;
+        let adjustedStartingBlockNumber = startingBlockNumber - ((startingBlockNumber - 1) % 5) + index - 1;
+        resolve(_.max([lastBlockNumber + 5, adjustedStartingBlockNumber]));
+      });
+    });
+  }
+
+  private setUpUrTransactionImportQueue(index: number): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       // make sure there is at least one task in the queue
-      let tasksRef = self.db.ref(`/urTransactionImportQueue/tasks`);
+      let tasksRef = self.db.ref(`/urTransactionImportQueue/tasks/${index}`);
       tasksRef.once('value', (snapshot: firebase.database.DataSnapshot) => {
         if (snapshot.exists()) {
-          resolve();
+          return Promise.resolve();
         } else {
-          let startingBlockNumber =
-          startingBlock = startingBlock - (startingBlock % 5) + 1; // start at multiple of 5 plus 1
-          tasksRef.child(startingBlock).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-            return tasksRef.child(startingBlock + 1).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
-          }).then(() => {
-            return tasksRef.child(startingBlock + 2).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
-          }).then(() => {
-            return tasksRef.child(startingBlock + 3).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
-          }).then(() => {
-            return tasksRef.child(startingBlock + 4).set({ _state: "ready_to_import", createdAt: firebase.database.ServerValue.TIMESTAMP });
-          }).then(() => {
-            resolve();
-          }, (error: string) => {
-            reject(error);
-          });
+          let startingBlockNumber = index;
+          return tasksRef.child(startingBlockNumber).set({createdAt: firebase.database.ServerValue.TIMESTAMP });
         }
+      }).then(() => {
+        resolve();
       }, (error: string) => {
         reject(error);
       });
@@ -264,18 +272,16 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
         _.each(referralsMapping, (referral, referralUserId) => {
           self.db.ref(`/users/${referralUserId}/sponsor`).update({announcementTransactionConfirmed: true}).then(() => {
             let referralStatus: string = (referral.registration && referral.registration.status) || 'initial';
-            if (!!referral.wallet &&
-              !!referral.wallet.announcementTransaction &&
-              !!referral.wallet.announcementTransaction.blockNumber &&
-              !!referral.wallet.announcementTransaction.hash) {
-              referralStatus = 'announcement-confirmed';
-            }
             let statusesNotNeedingAnnouncement = [
               'announcement-requested',
               'announcement-initiated',
               'announcement-confirmed'
             ];
-            if (referral.disbled || !referral.wallet || !referral.wallet.address || _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
+            if (referral.disbled ||
+              !referral.wallet ||
+              !referral.wallet.address ||
+              !!referral.wallet.announcementTransaction.blockNumber ||
+              _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
               return Promise.resolve();
             }
             return self.db.ref('/identityAnnouncementQueue/tasks').push({userId: referralUserId});
@@ -375,7 +381,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let self = this;
     return new Promise((resolve, reject) => {
 
-      self.eth.getBlock(blockNumber, true, function(error: string, block: any) {
+      QueueProcessor.web3().eth.getBlock(blockNumber, true, function(error: string, block: any) {
         if (error) {
           reject(`Got error from getBlock(): ${error}`);
           return;
@@ -625,7 +631,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       // there are more members in the chain
       let hash: string = '0x' + urTransaction.input.slice(20, 84);
       if (!this.transactionWrappers[hash]) {
-        let fetchedTransaction = this.eth.getTransaction(hash);
+        let fetchedTransaction = QueueProcessor.web3().eth.getTransaction(hash);
         if (!fetchedTransaction) {
           log.warn( '  unable to fetch transaction');
           return undefined;
