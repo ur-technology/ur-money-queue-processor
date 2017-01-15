@@ -44,8 +44,5 @@
     "typescript": "^1.8.10",
     "typings": "^1.3.2",
     "web3": "^0.17.0-alpha"
-  },
-  "devDependencies": {
-    "node-inspector": "git://github.com/iamfrontender/node-inspector.git"
   }
 }
