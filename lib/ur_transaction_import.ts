@@ -272,7 +272,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
               /^announcement-/.test(referralStatus)) {
               return Promise.resolve();
             }
-            return self.db.ref('/identityAnnouncementQueue/tasks/${referralUserId}').set({userId: referralUserId});
+            return self.db.ref(`/identityAnnouncementQueue/tasks/${referralUserId}`).set({userId: referralUserId});
           }).then(() => {
             numRecordsRemaining--;
             if (!finalized && numRecordsRemaining == 0) {
