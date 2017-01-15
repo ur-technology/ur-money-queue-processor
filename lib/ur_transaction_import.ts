@@ -38,12 +38,16 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
     let queue = new self.Queue(queueDescriptor, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
       let blockNumber: number = parseInt(task._id);
+      log.info("here 0");
       if (!QueueProcessor.web3().isConnected() || !QueueProcessor.web3().eth) {
+        log.info("here 1");
         self.rejectTask(queue, task, 'unable to get connection to local gur client', reject);
         return;
       }
+      log.info("here 2");
 
       self.waitUntilBlockReady(blockNumber).then(() => {
+        log.info("here 3");
         progress(1);
         self.getBlockAndImportUrTransactions(blockNumber, progress).then(() => {
           // queue a task to import the next block
