@@ -182,28 +182,21 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
       };
       userTransaction = _.omitBy(userTransaction, ignorableValue);
 
-      self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).once('value', (snapshot: firebase.database.DataSnapshot) => {
-        if (snapshot.exists()) {
-          // if a pending userTransaction was already created by the app,
-          // make sure we don't overwrite certain fields
-          let existingValues = _.pick(snapshot.val(), [
-            'createdAt',
-            'createdBy',
-            'sender',
-            'receiver',
-            'type',
-            'title',
-            'messageText'
-          ]);
-          existingValues = _.omitBy(existingValues, ignorableValue);
-          _.merge(userTransaction, existingValues);
-        }
-
-        return self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`).set(userTransaction);
+      let ref = self.db.ref(`/users/${userId}/transactions/${userTransaction.urTransaction.hash}`);
+      ref.once('value', (snapshot: firebase.database.DataSnapshot) => {
+        // if a pending userTransaction was already created by the app,
+        // make sure we don't overwrite certain fields
+        let existingValues = _.pick(
+          snapshot.val() || {},
+          [ 'createdAt', 'createdBy', 'sender', 'receiver', 'type', 'title', 'messageText' ]
+        );
+        existingValues = _.omitBy(existingValues, ignorableValue);
+        _.merge(userTransaction, existingValues);
+        return ref.set(userTransaction);
       }).then(() => {
         return self.updateCurrentBalance(user);
       }).then(() => {
-        return self.db.ref(`/users/${userId}/events`).push(self.generateEvent(userTransaction));
+        return self.db.ref(`/users/${userId}/events/${userTransaction.urTransaction.hash}`).set(self.generateEvent(userTransaction));
       }).then(() => {
         return self.recordAnnouncementInfoIfApplicable(userTransaction.urTransaction, addressToUserMapping, userId);
       }).then(() => {
@@ -284,7 +277,7 @@ export class UrTransactionImportQueueProcessor extends QueueProcessor {
               _.includes(statusesNotNeedingAnnouncement, referralStatus)) {
               return Promise.resolve();
             }
-            return self.db.ref('/identityAnnouncementQueue/tasks').push({userId: referralUserId});
+            return self.db.ref('/identityAnnouncementQueue/tasks/${referralUserId}').set({userId: referralUserId});
           }).then(() => {
             numRecordsRemaining--;
             if (!finalized && numRecordsRemaining == 0) {
