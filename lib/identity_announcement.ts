@@ -142,31 +142,13 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
   private buildAnnouncementTransaction(to: string, sponsorAnnouncementTransaction: any): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      let gasPrice = self.eth.gasPrice;
-      if (!gasPrice) {
-        reject('eth.gasPrice not set');
-        return;
-      }
-      if (!self.eth.blockNumber) {
-        reject('eth.blockNumber not set');
-        return;
-      }
-      let block = self.eth.getBlock(self.eth.blockNumber);
-      let gasLimit = block && block.gasLimit;
-      if (!gasLimit) {
-        reject('could not get gas limit');
-        return;
-      }
-
       let announcementTransaction: any = {
         from: QueueProcessor.env.PRIVILEGED_UTI_OUTBOUND_ADDRESS,
         to: to,
         value: 1,
-        data: this.transactionDataField(sponsorAnnouncementTransaction),
-        gasPrice: gasPrice.toNumber(),
-        // gasLimit: gasLimit
+        data: this.transactionDataField(sponsorAnnouncementTransaction)
       };
-      announcementTransaction.gas = self.eth.estimateGas(announcementTransaction); // TODO: handle failure here
+      announcementTransaction.gasLimit = self.eth.estimateGas(announcementTransaction); // TODO: handle failure here
       resolve(announcementTransaction);
     });
   }
