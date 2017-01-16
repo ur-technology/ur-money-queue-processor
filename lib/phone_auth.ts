@@ -140,7 +140,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
 
   private processCodeMatchingSpec() {
     let self = this;
-    let options = { 'specId': 'code_matching', 'numWorkers': 1, 'sanitize': false };
+    let options = { 'specId': 'code_matching', 'numWorkers': 5, 'sanitize': false };
     let queueRef = self.db.ref('/phoneAuthQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
