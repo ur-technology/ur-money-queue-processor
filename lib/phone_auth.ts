@@ -77,6 +77,16 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
         self.resolveTask(queue, task, resolve, reject);
       };
 
+      let resolveAsSponsorNotFound = () => {
+        task._new_state = "code_generation_canceled_because_sponsor_not_found";
+        self.resolveTask(queue, task, resolve, reject);
+      };
+
+      let resolveAsSponsorDisabled = () => {
+        task._new_state = "code_generation_canceled_because_sponsor_disabled";
+        self.resolveTask(queue, task, resolve, reject);
+      };
+
       self.lookupUsersByPhone(task.phone).then((matchingUsers) => {
         if (!_.isEmpty(matchingUsers)) {
 
@@ -133,13 +143,13 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           self.lookupUserByReferralCode(task.sponsorReferralCode).then((sponsor: any) => {
             if (!sponsor) {
               log.info(`  no sponsor found with referral code ${task.sponsorReferralCode}`);
-              resolveAsNotInvited();
+              resolveAsSponsorNotFound();
               return;
             }
 
             if (sponsor.disabled) {
               log.info(`  sponsor ${sponsor.userId} with referral code ${task.sponsorReferralCode} found, but was disabled`);
-              resolveAsNotInvited();
+              resolveAsSponsorDisabled();
               return;
             }
 
