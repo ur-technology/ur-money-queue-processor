@@ -5,8 +5,6 @@ import {QueueProcessor} from './queue_processor';
 import {BigNumber} from 'bignumber.js';
 
 export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
-  private eth: any;
-
   init(): Promise<any>[] {
     return [
       this.ensureQueueSpecLoaded("/identityAnnouncementQueue/specs/announce_identity", {
@@ -25,8 +23,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
       let userId: string = task.userId;
-      self.eth = QueueProcessor.web3().eth;
-      if (!QueueProcessor.web3().isConnected() || !self.eth) {
+      if (!QueueProcessor.web3().isConnected() || !QueueProcessor.web3().eth) {
         self.rejectTask(queue, task, 'unable to get connection to transaction relay', reject);
         return;
       }
@@ -121,7 +118,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
 
       let registrationRef = self.db.ref(`/users/${userId}/registration`);
       registrationRef.update({ status: "announcement-requested" });
-      self.eth.sendTransaction(announcementTransaction, (error: string, announcementTransactionHash: string) => {
+      QueueProcessor.web3().eth.sendTransaction(announcementTransaction, (error: string, announcementTransactionHash: string) => {
         registrationRef.update({
           status: error ? "announcement-failed" : "announcement-initiated",
           announcementFinalizedAt: firebase.database.ServerValue.TIMESTAMP
@@ -148,7 +145,12 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
         value: 1,
         data: this.transactionDataField(sponsorAnnouncementTransaction)
       };
-      announcementTransaction.gasLimit = self.eth.estimateGas(announcementTransaction); // TODO: handle failure here
+      try {
+        announcementTransaction.gasLimit = QueueProcessor.web3().eth.estimateGas(announcementTransaction); // TODO: handle failure here
+      } catch(error) {
+        reject(`got error when attempting to estimate gas for transaction ${JSON.stringify(announcementTransaction)}: ${error}`);
+        return;
+      }
       resolve(announcementTransaction);
     });
   }
