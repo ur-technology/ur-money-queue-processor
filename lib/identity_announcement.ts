@@ -8,6 +8,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
   init(): Promise<any>[] {
     return [
       this.ensureQueueSpecLoaded("/identityAnnouncementQueue/specs/announce_identity", {
+        "start_state": "ready_to_announce",
         "in_progress_state": "processing",
         "error_state": "error",
         "timeout": 120000,
@@ -63,6 +64,8 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
           reject(`unexpected status ${status} before announcement`);
         } else if (user.disabled) {
           reject('user is disabled');
+        } else if (!user.signUpBonusApproved) {
+          reject('user requres approval to receive a sign up bonus');
         } else if (!user.wallet || !user.wallet.address) {
           reject('user lacks wallet address');
         } else if (user.wallet.announcementTransaction && user.wallet.announcementTransaction.blockNumber) {

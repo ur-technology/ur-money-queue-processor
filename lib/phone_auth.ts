@@ -207,7 +207,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           return;
         }
         if (number.carrier.type === 'voip') {
-          log.warn(`attemp to sign in with voip phone ${phone} from carrier ${number.carrier.name}`);
+          log.warn(`attempt to sign in with voip phone ${phone} from carrier ${number.carrier.name}`);
           reject('voip phones not allowed');
           return;
         }
