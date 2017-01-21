@@ -199,21 +199,17 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       self.twilioLookupsClient.phoneNumbers(phone).get({
         type: 'carrier'
       }, function(error: any, number: any) {
-        if (error || !number || !number.carrier || !number.carrier.type || !number.carrier.name) {
-          if (error) {
-            log.warn(`error looking up carrier: ${error.message}`);
-          }
-          reject('could not determine carrier name and type');
+        if (error) {
+          reject(`error looking up carrier: ${error.message}`);
           return;
-        }
-        if (number.carrier.type === 'voip') {
+        } else if (number && number.carrier && number.carrier.type === 'voip') {
           log.warn(`attempt to sign in with voip phone ${phone} from carrier ${number.carrier.name}`);
           reject('voip phones not allowed');
           return;
         }
         resolve({
-          name: number.carrier.name,
-          type: number.carrier.type
+          name: (number && number.carrier && number.carrier.name) || "Unknown",
+          type: (number && number.carrier && number.carrier.type) || "Unknown"
         });
       });
     });
