@@ -4,7 +4,8 @@ import * as log from 'loglevel';
 import {QueueProcessor} from './queue_processor';
 
 export class PhoneAuthQueueProcessor extends QueueProcessor {
-  private twilioClient: any; // used to send messages via twilio
+  private twilioLookupsClient: any; // used to look up carrier type via twilio
+  private twilioRestClient: any; // used to send messages via twilio
 
   init(): Promise<any>[] {
     return [
@@ -31,7 +32,6 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     ]
   }
 
-
   private processCodeGenerationSpec() {
     let self = this;
     let options = { 'specId': 'code_generation', 'numWorkers': 4, sanitize: false };
@@ -39,15 +39,22 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
 
-      let sendAuthenticationCodeAndResolveAsFinished = () => {
-        self.sendAuthenticationCodeViaSms(task.phone).then((authenticationCode: string) => {
+      let sendAuthenticationCodeAndResolveAsFinished = (user?: any) => {
+        let p: any = user && user.phoneCarrier && user.phoneCarrier.type && user.phoneCarrier.name ?
+          Promise.resolve(user.phoneCarrier) :
+          self.lookupAndValidateCarrier(task.phone);
+
+        p.then((phoneCarrier: any) => {
+          task.phoneCarrier = phoneCarrier;
+          return self.sendAuthenticationCodeViaSms(task.phone);
+        }).then((authenticationCode: string) => {
           task.authenticationCode = authenticationCode;
           task._new_state = "code_generation_finished";
           self.resolveTask(queue, task, resolve, reject);
-        }, (error) => {
+        }, (error: string) => {
           self.rejectTask(queue, task, error, reject);
         });
-      }
+      };
 
       let resolveAsNotInvited = (searchField?: string) => {
         log.info(`  no matching user found for ${searchField || task.phone}`);
@@ -78,7 +85,8 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           // TODO: handle case where there are multiple invitations; for now, choose first user
           log.debug(`  matching user with userId ${matchingUser.userId} found for ${task.phone}`);
           task.userId = matchingUser.userId;
-          sendAuthenticationCodeAndResolveAsFinished();
+
+          sendAuthenticationCodeAndResolveAsFinished(matchingUser);
 
         } else if (task.email) {
           self.lookupUsersByEmail(task.email).then((matchingUsers) => {
@@ -100,7 +108,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
             let matchingUser: any = _.first(activeUsers);
             log.info(`  found matching user ${matchingUser.userId} for ${task.email}`);
             task.userId = matchingUser.userId;
-            sendAuthenticationCodeAndResolveAsFinished();
+            sendAuthenticationCodeAndResolveAsFinished(matchingUser);
           }, (error) => {
             self.rejectTask(queue, task, error, reject);
           });
@@ -151,7 +159,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       }
 
       let codeMatch = task.authenticationCode == task.submittedAuthenticationCode || (task.phone == '+16199344518' && task.submittedAuthenticationCode == '923239');
-      let p: any = task.userId ? self.updateFailedLoginCount(task.userId, codeMatch) : Promise.resolve();
+      let p: any = task.userId ? self.recordLoginInfo(task, codeMatch) : Promise.resolve();
       p.then(() => {
         if (task.email && codeMatch) {
           return self.db.ref(`/users/${task.userId}`).update({ phone: task.phone });
@@ -179,6 +187,36 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       });
     });
     return queue;
+  }
+
+  private lookupAndValidateCarrier(phone: string): Promise<any> {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      if (!self.twilioLookupsClient) {
+        let twilio = require('twilio');
+        self.twilioLookupsClient = new twilio.LookupsClient(QueueProcessor.env.TWILIO_ACCOUNT_SID, QueueProcessor.env.TWILIO_AUTH_TOKEN);
+      }
+      self.twilioLookupsClient.phoneNumbers(phone).get({
+        type: 'carrier'
+      }, function(error: any, number: any) {
+        if (error || !number || !number.carrier || !number.carrier.type || !number.carrier.name) {
+          if (error) {
+            log.warn(`error looking up carrier: ${error.message}`);
+          }
+          reject('could not determine carrier name and type');
+          return;
+        }
+        if (number.carrier.type === 'voip') {
+          log.warn(`attemp to sign in with voip phone ${phone} from carrier ${number.carrier.name}`);
+          reject('voip phones not allowed');
+          return;
+        }
+        resolve({
+          name: number.carrier.name,
+          type: number.carrier.type
+        });
+      });
+    });
   }
 
   private createNewUserBasedOnSponsorReferralCode(task: any): Promise<any> {
@@ -209,14 +247,19 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     });
   }
 
-  private updateFailedLoginCount(userId: string, codeMatch: boolean): Promise<any> {
+  private recordLoginInfo(task: any, codeMatch: boolean): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
-      self.lookupUserById(userId).then((user: any) => {
-        return self.db.ref(`/users/${userId}`).update({
+      self.lookupUserById(task.userId).then((user: any) => {
+        let attrs: any = {
           failedLoginCount: codeMatch ? 0 : (user.failedLoginCount || 0) + 1,
+          lastSignInAt: firebase.database.ServerValue.TIMESTAMP,
           updatedAt: firebase.database.ServerValue.TIMESTAMP
-        });
+        };
+        if (task.phoneCarrier && !user.phoneCarrier) {
+          attrs.phoneCarrier = task.phoneCarrier;
+        }
+        return self.db.ref(`/users/${task.userId}`).update(attrs);
       }).then(() => {
         resolve();
       }, (error: any) => {
@@ -241,11 +284,11 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
   private sendSms(phone: string, messageText: string): Promise<string> {
     let self = this;
     return new Promise((resolve, reject) => {
-      if (!self.twilioClient) {
+      if (!self.twilioRestClient) {
         let twilio = require('twilio');
-        self.twilioClient = new twilio.RestClient(QueueProcessor.env.TWILIO_ACCOUNT_SID, QueueProcessor.env.TWILIO_AUTH_TOKEN);
+        self.twilioRestClient = new twilio.RestClient(QueueProcessor.env.TWILIO_ACCOUNT_SID, QueueProcessor.env.TWILIO_AUTH_TOKEN);
       }
-      self.twilioClient.messages.create({
+      self.twilioRestClient.messages.create({
         to: phone,
         from: QueueProcessor.env.TWILIO_FROM_NUMBER,
         body: messageText
