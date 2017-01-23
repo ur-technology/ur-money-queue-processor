@@ -40,13 +40,19 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       self.startTask(queue, task);
 
       let sendAuthenticationCodeAndResolveAsFinished = (user?: any) => {
-        let p: any = user && user.phoneCarrier && user.phoneCarrier.type && user.phoneCarrier.name ?
+        let p: any = user && user.phoneCarrier && user.phoneCarrier.type ?
           Promise.resolve(user.phoneCarrier) :
-          self.lookupAndValidateCarrier(task.phone);
-
+          self.lookupCarrier(task.phone);
         p.then((phoneCarrier: any) => {
           task.phoneCarrier = phoneCarrier;
-          return self.sendAuthenticationCodeViaSms(task.phone);
+          if (phoneCarrier.type === 'voip') {
+            if (task.userId && user && !(user.phoneCarrier && user.phoneCarrier.type === 'voip') {
+              self.db.ref(`/users/${task.userId}`).update({phoneCarrier: phoneCarrier});
+            }
+            return Promise.reject('voip phone not allowed');
+          } else {
+            return self.sendAuthenticationCodeViaSms(task.phone);
+          }
         }).then((authenticationCode: string) => {
           task.authenticationCode = authenticationCode;
           task._new_state = "code_generation_finished";
@@ -189,7 +195,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
     return queue;
   }
 
-  private lookupAndValidateCarrier(phone: string): Promise<any> {
+  private lookupCarrier(phone: string): Promise<any> {
     let self = this;
     return new Promise((resolve, reject) => {
       if (!self.twilioLookupsClient) {
@@ -201,10 +207,6 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       }, function(error: any, number: any) {
         if (error) {
           reject(`error looking up carrier: ${error.message}`);
-          return;
-        } else if (number && number.carrier && number.carrier.type === 'voip') {
-          log.warn(`attempt to sign in with voip phone ${phone} from carrier ${number.carrier.name}`);
-          reject('voip phones not allowed');
           return;
         }
         resolve({
