@@ -49,7 +49,9 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           self.lookupCarrier(task.phone);
         p.then((phoneCarrier: any) => {
           task.phoneCarrier = phoneCarrier;
-          if (phoneCarrier.type === 'voip') {
+          if (!user || !user.authenticationBypassed) {
+            return Promise.reject<string>('authentication temporarily blocked');
+          } else if (phoneCarrier.type === 'voip') {
             if (task.userId && user && !(user.phoneCarrier && user.phoneCarrier.type === 'voip')) {
               self.db.ref(`/users/${task.userId}`).update({phoneCarrier: phoneCarrier});
             }
