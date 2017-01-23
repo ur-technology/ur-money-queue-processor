@@ -3,6 +3,10 @@ import * as _ from 'lodash';
 import * as log from 'loglevel';
 import {QueueProcessor} from './queue_processor';
 
+interface sendAuthenticationCodeFunc {
+    (phone: string): Promise<string>;
+}
+
 export class PhoneAuthQueueProcessor extends QueueProcessor {
   private twilioLookupsClient: any; // used to look up carrier type via twilio
   private twilioRestClient: any; // used to send messages via twilio
@@ -46,10 +50,10 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
         p.then((phoneCarrier: any) => {
           task.phoneCarrier = phoneCarrier;
           if (phoneCarrier.type === 'voip') {
-            if (task.userId && user && !(user.phoneCarrier && user.phoneCarrier.type === 'voip') {
+            if (task.userId && user && !(user.phoneCarrier && user.phoneCarrier.type === 'voip')) {
               self.db.ref(`/users/${task.userId}`).update({phoneCarrier: phoneCarrier});
             }
-            return Promise.reject('voip phone not allowed');
+            return Promise.reject<string>('voip phone not allowed');
           } else {
             return self.sendAuthenticationCodeViaSms(task.phone);
           }
@@ -254,7 +258,7 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
           lastSignInAt: firebase.database.ServerValue.TIMESTAMP,
           updatedAt: firebase.database.ServerValue.TIMESTAMP
         };
-        if (task.phoneCarrier && !user.phoneCarrier) {
+        if (task.phoneCarrier && task.phoneCarrier.type !== (user.phoneCarrier && user.phoneCarrier.type)) {
           attrs.phoneCarrier = task.phoneCarrier;
         }
         return self.db.ref(`/users/${task.userId}`).update(attrs);
