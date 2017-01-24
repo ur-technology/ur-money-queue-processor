@@ -44,14 +44,17 @@ export class PhoneAuthQueueProcessor extends QueueProcessor {
       self.startTask(queue, task);
 
       let sendAuthenticationCodeAndResolveAsFinished = (user?: any) => {
+        if (!(user && (user.admin || user.authenticationBypassed))) {
+          self.rejectTask(queue, task, 'authentication temporarily blocked', reject);
+          return;
+        }
+
         let p: any = user && user.phoneCarrier && user.phoneCarrier.type ?
           Promise.resolve(user.phoneCarrier) :
           self.lookupCarrier(task.phone);
         p.then((phoneCarrier: any) => {
           task.phoneCarrier = phoneCarrier;
-          if (!user || !user.authenticationBypassed) {
-            return Promise.reject<string>('authentication temporarily blocked');
-          } else if (phoneCarrier.type === 'voip') {
+          if (phoneCarrier.type === 'voip') {
             if (task.userId && user && !(user.phoneCarrier && user.phoneCarrier.type === 'voip')) {
               self.db.ref(`/users/${task.userId}`).update({phoneCarrier: phoneCarrier});
             }
