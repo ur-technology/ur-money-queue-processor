@@ -45,10 +45,7 @@ export class QueueProcessor {
             let results = (funcNameRegex).exec((this).constructor.toString());
             let className = results[1];
             let flag = _.toUpper(_.snakeCase(className)).replace(/$/, '_ENABLED');
-
-            log.info(flag)
             let flagValue = QueueProcessor.env[flag];
-            log.info(flagValue)
             this._enabled = !!flagValue && /true/i.test(flagValue);
         }
         return this._enabled;

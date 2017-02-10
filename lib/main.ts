@@ -42,7 +42,6 @@ let queueProcessors = _.map([
 
 log.info(`starting with NODE_ENV ${process.env.NODE_ENV} and FIREBASE_PROJECT_ID ${process.env.FIREBASE_PROJECT_ID}`);
 _.each(queueProcessors, (p) => {
-    log.info(p.enabled())
     if (p.enabled()) {
         log.info(`processing enabled for ${p.className()}`);
     }
