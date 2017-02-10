@@ -32,6 +32,12 @@ export class QueueProcessor {
     this.Queue = QueueProcessor.Queue;
   }
 
+  className(): string {
+    let funcNameRegex = /function (.{1,})\(/;
+    let results = (funcNameRegex).exec((this).constructor.toString());
+    return results[1];
+  }
+
   enabled(): boolean {
     if (_.isUndefined(this._enabled)) {
       let funcNameRegex = /function (.{1,})\(/;
