@@ -3,16 +3,16 @@
 import * as dotenv from 'dotenv';
 import * as log from 'loglevel';
 import * as _ from 'lodash';
-import {QueueProcessor} from './queue_processor';
-import {ChatQueueProcessor} from './chat';
-import {IdentityAnnouncementQueueProcessor} from './identity_announcement';
-import {PhoneLookupQueueProcessor} from './phone_lookup';
-import {SignUpQueueProcessor} from './sign_up';
-import {SignInQueueProcessor} from './sign_in';
-import {UrTransactionImportQueueProcessor} from './ur_transaction_import';
+import { QueueProcessor } from './queue_processor';
+import { ChatQueueProcessor } from './chat';
+import { IdentityAnnouncementQueueProcessor } from './identity_announcement';
+import { PhoneLookupQueueProcessor } from './phone_lookup';
+import { SignUpQueueProcessor } from './sign_up';
+import { SignInQueueProcessor } from './sign_in';
+import { UrTransactionImportQueueProcessor } from './ur_transaction_import';
 
 if (!process.env.NODE_ENV) {
-  dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
+    dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
 }
 
 log.setDefaultLevel(process.env.LOG_LEVEL || "info")
@@ -20,8 +20,8 @@ log.setDefaultLevel(process.env.LOG_LEVEL || "info")
 let serviceAccount = require(`../serviceAccountCredentials.${process.env.FIREBASE_PROJECT_ID}.json`);
 let admin = require("firebase-admin");
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
 });
 
 QueueProcessor.env = process.env;
@@ -30,38 +30,39 @@ QueueProcessor.auth = admin.auth();
 QueueProcessor.Queue = require('firebase-queue');
 
 let queueProcessors = _.map([
-  ChatQueueProcessor,
-  IdentityAnnouncementQueueProcessor,
-  PhoneLookupQueueProcessor,
-  SignUpQueueProcessor,
-  SignInQueueProcessor,
-  UrTransactionImportQueueProcessor
+    ChatQueueProcessor,
+    IdentityAnnouncementQueueProcessor,
+    PhoneLookupQueueProcessor,
+    SignUpQueueProcessor,
+    SignInQueueProcessor,
+    UrTransactionImportQueueProcessor
 ], (queueProcessorClass) => {
-  return new queueProcessorClass();
+    return new queueProcessorClass();
 });
 
 log.info(`starting with NODE_ENV ${process.env.NODE_ENV} and FIREBASE_PROJECT_ID ${process.env.FIREBASE_PROJECT_ID}`);
 _.each(queueProcessors, (p) => {
-  if (p.enabled()) {
-    log.info(`processing enabled for ${p.className()}`);
-  }
+    log.info(p.enabled())
+    if (p.enabled()) {
+        log.info(`processing enabled for ${p.className()}`);
+    }
 });
 
 let initializerPromises = _.flatten(_.map(queueProcessors, (p) => {
-  return p.enabled() ? p.init() : [];
+    return p.enabled() ? p.init() : [];
 }));
 
 let queues: any[] = [];
 Promise.all(initializerPromises).then(values => {
-  queues = _.flatten(_.map(queueProcessors, (p) => { return p.enabled() ? p.process() : []; }));
+    queues = _.flatten(_.map(queueProcessors, (p) => { return p.enabled() ? p.process() : []; }));
 });
 
 process.on('SIGTERM', () => {
-  log.info(`Exiting...`);
-  let shutdownPromises: Promise<any>[] = _.map(queues, (queue) => { return queue.shutdown(); });
-  Promise.all(shutdownPromises).then(values => {
-    log.info(values);
-    log.info('Finished shutting down all queues');
-    process.exit(0);
-  });
+    log.info(`Exiting...`);
+    let shutdownPromises: Promise<any>[] = _.map(queues, (queue) => { return queue.shutdown(); });
+    Promise.all(shutdownPromises).then(values => {
+        log.info(values);
+        log.info('Finished shutting down all queues');
+        process.exit(0);
+    });
 });
