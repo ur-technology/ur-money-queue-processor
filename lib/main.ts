@@ -9,6 +9,7 @@ import { IdentityAnnouncementQueueProcessor } from './identity_announcement';
 import { PhoneLookupQueueProcessor } from './phone_lookup';
 import { SignUpQueueProcessor } from './sign_up';
 import { SignInQueueProcessor } from './sign_in';
+import { VerifyIDQueueProcessor } from './verify_id';
 import { UrTransactionImportQueueProcessor } from './ur_transaction_import';
 
 if (!process.env.NODE_ENV) {
@@ -35,6 +36,7 @@ let queueProcessors = _.map([
     PhoneLookupQueueProcessor,
     SignUpQueueProcessor,
     SignInQueueProcessor,
+    VerifyIDQueueProcessor,
     UrTransactionImportQueueProcessor
 ], (queueProcessorClass) => {
     return new queueProcessorClass();
