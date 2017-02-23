@@ -7,11 +7,13 @@ import * as log from 'loglevel';
 export class QueueProcessor {
     db: any;
     auth: any;
+    storage: any;
     Queue: any;
     _enabled: boolean;
 
     static db: any;
     static auth: any;
+    static storage: any;
     static Queue: any;
 
     static env: any;
@@ -29,6 +31,7 @@ export class QueueProcessor {
     constructor() {
         this.db = QueueProcessor.db;
         this.auth = QueueProcessor.auth;
+        this.storage = QueueProcessor.storage;
         this.Queue = QueueProcessor.Queue;
     }
 

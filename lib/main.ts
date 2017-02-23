@@ -25,9 +25,15 @@ admin.initializeApp({
     databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
 });
 
+var google_cloud_storage = require('@google-cloud/storage')({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    keyFilename: `serviceAccountCredentials.${process.env.FIREBASE_PROJECT_ID}.json`,
+});
+
 QueueProcessor.env = process.env;
 QueueProcessor.db = admin.database();
 QueueProcessor.auth = admin.auth();
+QueueProcessor.storage = google_cloud_storage.bucket(`${process.env.FIREBASE_PROJECT_ID}.appspot.com`);
 QueueProcessor.Queue = require('firebase-queue');
 
 let queueProcessors = _.map([

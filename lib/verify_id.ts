@@ -5,6 +5,9 @@ import * as _ from 'lodash';
 import * as log from 'loglevel';
 
 var request = require('request-promise');
+var tmp = require('tempfile');
+import fs = require('fs');
+
 
 interface idScanRequest {
     id: string; // user ID
@@ -13,6 +16,7 @@ interface idScanRequest {
     result: any;
     _new_state: string;
     state: string;
+    frontImage: Blob;
 }
 
 type handlerResponse = Promise<any>;
@@ -80,6 +84,72 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
 
     private handleNationalIDScanVerification(userId: string, regionSet: string): handlerResponse {
 
+        let options: any = this.acuantRequestOptions(regionSet);
+
+        return new Promise((resolve, reject) => {
+
+            this.readUserIDPhoto(userId, 'national-id-front.jpg')
+
+                // Read the front image
+                .then((data: fs.ReadStream) => {
+                    options.formData.frontImage = data;
+                    return this.readUserIDPhoto(userId, 'national-id-back.jpg');
+                },
+                // Failed to read the front image
+                (error) => {
+                    reject(error);
+                })
+
+                // Read the back image
+                .then((data: fs.ReadStream) => {
+                    options.formData.backImage = data;
+                    return request(options);
+                },
+                // Failed to read the back image
+                (error) => {
+                    reject(error);
+                })
+
+                // Acuant connection succeeded
+                .then((response: any) => {
+
+                    let error: string = (response.ResponseCodeAuthorization < 0 && response.ResponseCodeAuthorization) ||
+                        (response.ResponseCodeAutoDetectState < 0 && response.ResponseCodeAutoDetectState) ||
+                        (response.ResponseCodeProcState < 0 && response.ResponseCodeProcState) ||
+                        (response.WebResponseCode < 1 && response.WebResponseCode);
+
+                    if (error) {
+                        reject(`error processing id: ${error}`);
+                    }
+
+                    // FIXME! Make sure ID hasn't been used before
+
+                    // FIXME! This isn't working. Image is invalid
+                    return this.uploadUserIDPhoto(userId, 'id-face-image.jpg', response.FaceImage);
+                },
+                // Acuant connection failed
+                (err: any) => {
+                    reject('failed to contact remote host');
+                })
+
+                // Face image upload succeeded
+                .then(() => {
+
+                    // FIXME! Store ID card data
+
+                    reject('debug');
+                    // resolve()
+                },
+                // Face image upload failed
+                (error) => {
+                    reject(error);
+                })
+                ;
+        });
+    }
+
+    private acuantRequestOptions(regionSet: string): any {
+
         let params: any[] = [
             regionSet, // REGIONSET
             true, // AUTODETECTSTATE
@@ -95,27 +165,18 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
 
         let paramString = _.join(_.map(params, _.toString), '/');
 
-        var options = {
+        let options: any = {
             method: 'POST',
             uri: this.acuantURL(`ProcessDLDuplex/${paramString}`),
             headers: {
                 'Authorization': this.acuantAuthHeader(),
             },
-            json: true
+            formData: {},
+            timeout: 25000,
+            json: true,
         };
 
-        return new Promise((resolve, reject) => {
-
-            request(options)
-                .then((response: any) => {
-                    console.log('A');
-                    resolve()
-                },
-                (err: any) => {
-                    console.log('B');
-                    reject('failed to contact remote host');
-                });
-        });
+        return options;
     }
 
     private acuantURL(path: string): string {
@@ -131,7 +192,135 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
         return 'user/' + userID + '/id-images/' + fileName;
     }
 
-    private userIDPhotoRef(userID: string, fileName: string): firebase.storage.Reference {
-        return firebase.storage().ref(this.userIDPhotoURL(userID, fileName));
+    private userIDPhotoRef(userID: string, fileName: string): any {
+        return this.storage.file(this.userIDPhotoURL(userID, fileName));
+    }
+
+    private downloadFile(remoteFile: any): Promise<string> {
+
+        var localFilename = tmp('.jpg');
+
+        return new Promise((resolve, reject) => {
+
+            remoteFile.createReadStream()
+                .on('error', (err: any) => {
+                    reject(err);
+                })
+                .pipe(fs.createWriteStream(localFilename))
+                .on('error', (err: any) => {
+                    reject(err);
+                })
+                .on('finish', function() {
+                    resolve(localFilename);
+                })
+        });
+    }
+
+    private uploadFile(localFile: string, remoteFileRef: any): Promise<any> {
+
+        return new Promise((resolve, reject) => {
+            fs.createReadStream(localFile)
+                .pipe(remoteFileRef.createWriteStream({
+                    metadata: {
+                        contentType: 'image/jpeg',
+                    }
+                }))
+                .on('error', function(err: any) { reject(err) })
+                .on('finish', function() {
+                    resolve();
+                });
+        });
+    }
+
+    private downloadUserIDPhoto(userID: string, fileName: string): Promise<string> {
+        return this.downloadFile(this.userIDPhotoRef(userID, fileName));
+    }
+
+    private uploadUserIDPhoto(userID: string, fileName: string, data: any): Promise<any> {
+
+        let tmpfilename: string;
+
+        return new Promise((resolve, reject) => {
+
+            this.writeFile(data)
+
+                // Write succeeded
+                .then((filename) => {
+
+                    // Store temp file name for later deletion
+                    tmpfilename = filename;
+
+                    return this.uploadFile(filename, this.userIDPhotoRef(userID, fileName));
+                },
+
+                // Write failed
+                (error) => {
+                    reject(error)
+                })
+
+                // Upload succeded
+                .then(() => {
+                    resolve();
+                },
+
+                // Upload failed
+                (error) => {
+                    reject(error);
+                })
+                ;
+        });
+    }
+
+    private readFile(path: string): Promise<fs.ReadStream> {
+
+        return new Promise((resolve, reject) => {
+            resolve(fs.createReadStream(path));
+        });
+    }
+
+    private writeFile(data: any): Promise<string> {
+
+        var localFilename = tmp();
+
+        return new Promise((resolve, reject) => {
+            fs.writeFile(localFilename, data, (err) => {
+
+                if (err) {
+                    reject(err);
+                }
+
+                resolve(localFilename);
+            });
+        });
+    }
+
+    private readUserIDPhoto(userID: string, fileName: string): Promise<fs.ReadStream> {
+
+        return new Promise((resolve, reject) => {
+
+            let tmpfilename: string;
+
+            this.downloadUserIDPhoto(userID, fileName)
+
+                // Once downloaded and in a temp file
+                .then((filename: string) => {
+                    tmpfilename = filename;
+                    return this.readFile(filename);
+                },
+                // Failed to download
+                (error) => {
+                    reject(error);
+                })
+
+                // File read from disk successfully
+                .then((data: fs.ReadStream) => {
+                    fs.unlink(tmpfilename);
+                    resolve(data);
+                },
+                // Failed to read from disk
+                (error) => {
+                    reject(error);
+                });
+        });
     }
 }
