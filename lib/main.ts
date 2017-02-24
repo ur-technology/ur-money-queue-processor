@@ -11,6 +11,7 @@ import { SignUpQueueProcessor } from './sign_up';
 import { SignInQueueProcessor } from './sign_in';
 import { VerifyIDQueueProcessor } from './verify_id';
 import { UrTransactionImportQueueProcessor } from './ur_transaction_import';
+import { AcuantIDVerifier } from './id-verification/acuant';
 
 if (!process.env.NODE_ENV) {
     dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
@@ -35,6 +36,12 @@ QueueProcessor.db = admin.database();
 QueueProcessor.auth = admin.auth();
 QueueProcessor.storage = google_cloud_storage.bucket(`${process.env.FIREBASE_PROJECT_ID}.appspot.com`);
 QueueProcessor.Queue = require('firebase-queue');
+
+QueueProcessor.idVerifier = new AcuantIDVerifier(
+    QueueProcessor.db,
+    QueueProcessor.storage,
+    QueueProcessor.env.ACUANT_API_KEY
+);
 
 let queueProcessors = _.map([
     ChatQueueProcessor,
