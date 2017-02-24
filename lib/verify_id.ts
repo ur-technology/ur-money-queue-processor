@@ -4,10 +4,14 @@ import * as firebase from 'firebase';
 import * as _ from 'lodash';
 import * as log from 'loglevel';
 
+// This is the minimum confidence threshold for the selfie matcher. 
+// It's a percentage, so 100 would only allow for perfect matches,
+// and 1 would match almost anything.
+const selfieMatchThreshold = 75;
+
 var request = require('request-promise');
 var tmp = require('tempfile');
 import fs = require('fs');
-
 
 interface idScanRequest {
     id: string; // user ID
@@ -33,17 +37,24 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
                 "finished_state": "id_verification_success",
                 "error_state": "id_verification_error",
                 "timeout": 5 * 60 * 1000
+            }),
+            this.ensureQueueSpecLoaded("/verifySelfieQueue/specs/verify_selfie", {
+                "in_progress_state": "selfie_verification_in_progress",
+                "finished_state": "selfie_verification_success",
+                "error_state": "selfie_verification_error",
+                "timeout": 5 * 60 * 1000
             })
         ];
     }
 
     process(): any[] {
         return [
-            this.processSignInSpec()
+            this.processVerifyIDSpec(),
+            this.processVerifySelfieSpec()
         ]
     }
 
-    private processSignInSpec() {
+    private processVerifyIDSpec() {
 
         let self = this;
         let options = { 'specId': 'verify_id', 'numWorkers': 8, 'sanitize': false };
@@ -82,9 +93,37 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
         return queue;
     }
 
+    private processVerifySelfieSpec() {
+
+        let self = this;
+        let options = { 'specId': 'verify_selfie', 'numWorkers': 8, 'sanitize': false };
+        let queueRef = self.db.ref('/verifySelfieQueue');
+
+        let queue = new self.Queue(queueRef, options, (task: idScanRequest, progress: any, resolve: any, reject: any) => {
+
+            self.startTask(queue, task);
+
+            this.matchSelfie(task.id).then(
+                () => {
+                    task._new_state = 'selfie_verification_success';
+                    task.result = { state: task._new_state };
+                    self.resolveTask(queue, task, resolve, reject);
+                },
+                (error) => {
+                    task._new_state = 'selfie_verification_error';
+                    task.result = { state: task._new_state, error: error };
+                    self.resolveTask(queue, task, resolve, reject)
+                });
+        });
+
+        return queue;
+    }
+
     private handleNationalIDScanVerification(userId: string, regionSet: string): handlerResponse {
 
-        let options: any = this.acuantRequestOptions(regionSet);
+        let options: any = this.acuantDuplexIDVerficationRequestOptions(regionSet);
+        let faceImage: any;
+        let idCardData: any;
 
         return new Promise((resolve, reject) => {
 
@@ -122,25 +161,125 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
                         reject(`error processing id: ${error}`);
                     }
 
-                    // FIXME! Make sure ID hasn't been used before
+                    idCardData = response;
+                    faceImage = response.FaceImage;
 
-                    // FIXME! This isn't working. Image is invalid
-                    return this.uploadUserIDPhoto(userId, 'id-face-image.jpg', response.FaceImage);
+                    return this.assertIdUniqueness(this.idHash(response), userId);
                 },
                 // Acuant connection failed
                 (err: any) => {
                     reject('failed to contact remote host');
                 })
 
+                // ID is unique
+                .then(() => {
+                    return this.uploadUserIDPhoto(userId, 'id-face-image.jpg', faceImage);
+                },
+                // ID is not unique
+                (error) => {
+                    reject('Failed to assert uniqueness: ' + error);
+                })
+
                 // Face image upload succeeded
                 .then(() => {
-
-                    // FIXME! Store ID card data
-
-                    reject('debug');
-                    // resolve()
+                    return this.updateUserRecord(userId, { idHash: this.idHash(idCardData), idCardData: _.omitBy(idCardData, _.isArray), idUploaded: true });
                 },
                 // Face image upload failed
+                (error) => {
+                    reject(error);
+                })
+
+                // Database record update succeeded
+                .then(() => {
+                    resolve();
+                },
+                // Database record update failed
+                (error) => {
+                    reject(error);
+                })
+        });
+    }
+
+    private matchSelfie(userID: string): Promise<any> {
+
+        let options = this.acuantFaceMatchRequestOptions();
+
+        return new Promise((resolve, reject) => {
+
+            this.readUserIDPhoto(userID, 'id-face-image.jpg')
+
+                // Read the id-face image
+                .then((data: fs.ReadStream) => {
+                    options.formData.photo1 = data;
+                    return this.readUserIDPhoto(userID, 'selfie.jpg');
+                },
+                // Failed to read the id-face image
+                (error) => {
+                    reject(error);
+                })
+
+                // Read the selfie image
+                .then((data: fs.ReadStream) => {
+                    options.formData.photo2 = data;
+                    return request(options);
+                },
+                // Failed to read the selfie image
+                (error) => {
+                    reject(error);
+                })
+
+                // Acuant connection succeeded
+                .then((response: any) => {
+
+                    if (!response.FacialMatch || response.FacialMatchConfidenceRating < selfieMatchThreshold) {
+                        reject(`Can't automatically match selfie`);
+                    }
+
+                    return this.updateUserRecord(userID, { faceMatchData: response, selfieMatched: true });
+                },
+
+                // Acuant connection failed
+                (err: any) => {
+                    reject('failed to contact remote host');
+                })
+
+                // Database record update succeeded
+                .then(() => {
+                    resolve();
+                },
+                // Database record update failed
+                (error) => {
+                    reject(error);
+                })
+        });
+    }
+
+    private updateUserRecord(userID: string, data: any): Promise<any> {
+        let currentUserRef = this.db.ref(`/users/${userID}`);
+        return currentUserRef.update(data);
+    }
+
+    // Genererate a deterministic hash that uniquely identifies an ID
+    private idHash(idObject: any): string {
+        return new Buffer(idObject.Id + idObject.IdCountry + idObject.CardType).toString('base64')
+    }
+
+    private assertIdUniqueness(idHash: string, userID: string): Promise<any> {
+
+        return new Promise((resolve, reject) => {
+
+            this.lookupUsers(this.db.ref("/users").orderByChild("idHash").equalTo(idHash))
+
+                // Got results from DB
+                .then((results) => {
+
+                    if (results.length > 0) {
+                        reject('That ID has been used before');
+                    }
+
+                    resolve();
+                },
+                // DB lookup failed
                 (error) => {
                     reject(error);
                 })
@@ -148,7 +287,7 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
         });
     }
 
-    private acuantRequestOptions(regionSet: string): any {
+    private acuantDuplexIDVerficationRequestOptions(regionSet: string): any {
 
         let params: any[] = [
             regionSet, // REGIONSET
@@ -168,6 +307,22 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
         let options: any = {
             method: 'POST',
             uri: this.acuantURL(`ProcessDLDuplex/${paramString}`),
+            headers: {
+                'Authorization': this.acuantAuthHeader(),
+            },
+            formData: {},
+            timeout: 25000,
+            json: true,
+        };
+
+        return options;
+    }
+
+    private acuantFaceMatchRequestOptions(): any {
+
+        let options: any = {
+            method: 'POST',
+            uri: this.acuantURL(`FacialMatch`),
             headers: {
                 'Authorization': this.acuantAuthHeader(),
             },
@@ -280,10 +435,17 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
 
     private writeFile(data: any): Promise<string> {
 
-        var localFilename = tmp();
+        let localFilename = tmp();
+
+        let byteArray: Uint8Array = new Uint8Array(data);
+        let buf = new Buffer(byteArray.buffer.byteLength);
+
+        for (let i = 0; i < buf.length; ++i) {
+            buf[i] = byteArray[i];
+        }
 
         return new Promise((resolve, reject) => {
-            fs.writeFile(localFilename, data, (err) => {
+            fs.writeFile(localFilename, buf, (err) => {
 
                 if (err) {
                     reject(err);

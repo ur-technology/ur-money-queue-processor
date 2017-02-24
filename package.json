@@ -21,6 +21,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/storage": "^0.7.0",
     "bignumber.js": "^2.4.0",
     "dotenv": "^2.0.0",
     "ethereumjs-tx": "^1.1.2",
@@ -41,6 +42,7 @@
     "sendgrid": "^4.7.1",
     "sprintf-js": "^1.0.3",
     "stripe": "^4.14.0",
+    "tempfile": "^1.1.1",
     "throng": "^4.0.0",
     "twilio": "^2.9.1",
     "typescript": "^1.8.10",
