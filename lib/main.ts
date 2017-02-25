@@ -3,15 +3,15 @@
 import * as dotenv from 'dotenv';
 import * as log from 'loglevel';
 import * as _ from 'lodash';
-import { QueueProcessor } from './queue_processor';
-import { ChatQueueProcessor } from './chat';
-import { IdentityAnnouncementQueueProcessor } from './identity_announcement';
-import { PhoneLookupQueueProcessor } from './phone_lookup';
-import { SendEmailQueueProcessor } from './send_email';
-import { SignUpQueueProcessor } from './sign_up';
-import { SignInQueueProcessor } from './sign_in';
-import { VerifyIDQueueProcessor } from './verify_id';
-import { UrTransactionImportQueueProcessor } from './ur_transaction_import';
+import { QueueProcessor } from './processors/queue_processor';
+import { ChatQueueProcessor } from './processors/chat';
+import { IdentityAnnouncementQueueProcessor } from './processors/identity_announcement';
+import { PhoneLookupQueueProcessor } from './processors/phone_lookup';
+import { SendEmailQueueProcessor } from './processors/send_email';
+import { SignUpQueueProcessor } from './processors/sign_up';
+import { SignInQueueProcessor } from './processors/sign_in';
+import { VerifyIDQueueProcessor } from './processors/verify_id';
+import { UrTransactionImportQueueProcessor } from './processors/ur_transaction_import';
 import { AcuantIDVerifier } from './id-verification/acuant';
 
 if (!process.env.NODE_ENV) {

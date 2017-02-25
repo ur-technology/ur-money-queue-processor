@@ -1,6 +1,6 @@
 import * as _ from 'lodash';
 import { QueueProcessor } from './queue_processor';
-import { SendGridService } from './services/sendgrid.service';
+import { SendGridService } from '../services/sendgrid.service';
 
 const sendgrid = require('sendgrid');
 
