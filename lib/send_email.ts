@@ -11,7 +11,29 @@ export class SendEmailQueueProcessor extends QueueProcessor {
                 error_state: 'send_email_error',
                 timeout: 5 * 60 * 1000
             })
+            // this.addSampleTask()
         ];
+    }
+
+    private addSampleTask(): Promise<any> {
+        const data = {
+            from: 'support@ur.com',
+            to: 'weidai1122@gmail.com',
+            subject: 'Hello',
+            contentType: 'text/plain',
+            content: 'Hello Haohong'
+        };
+
+        return new Promise((resolve, reject) => {
+            const tasksRef = this.db.ref('/sendEmailQueue/tasks');
+            tasksRef.push(data, (error: any) => {
+                if (error) {
+                    reject(error.message);
+                } else {
+                    resolve(data);
+                }
+            });
+        });
     }
 
     process(): any[] {
