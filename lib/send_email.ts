@@ -1,7 +1,18 @@
 import * as _ from 'lodash';
 import { QueueProcessor } from './queue_processor';
+import { SendGridService } from './services/sendgrid.service';
+
+const sendgrid = require('sendgrid');
 
 export class SendEmailQueueProcessor extends QueueProcessor {
+    private sendGridService: SendGridService;
+
+    constructor() {
+        super();
+
+        this.sendGridService = new SendGridService(process.env.SENDGRID_API_KEY);
+    }
+
     init(): Promise<any>[] {
 
         return [
@@ -43,7 +54,7 @@ export class SendEmailQueueProcessor extends QueueProcessor {
     }
 
     private processSendEmailSpec() {
-        const options = {
+        const queueOptions = {
             specId: 'send_email',
             numWorkers: 8,
             sanitize: false
@@ -51,12 +62,39 @@ export class SendEmailQueueProcessor extends QueueProcessor {
         const queueRef = this.db.ref('/sendEmailQueue');
         const queue = new this.Queue(
             queueRef,
-            options,
+            queueOptions,
             (task: any, progress: any, resolve: any, reject: any) => {
                 this.startTask(queue, task);
 
-                // TODO: Send email using sendgrid
-                this.resolveTask(queue, task, resolve, reject);
+                if (!task.from) {
+                    this.rejectTask(queue, task, 'expecting from address', reject);
+                    return;
+                }
+                if (!task.to) {
+                    this.rejectTask(queue, task, 'expecting to address', reject);
+                    return;
+                }
+                if (!task.subject) {
+                    this.rejectTask(queue, task, 'expecting subject address', reject);
+                    return;
+                }
+
+                this.sendGridService
+                    .send(task.from, task.to, task.subject, task.content, task.contentType)
+                    .then((response: any) => {
+                        task._new_state = 'send_email_finished';
+                        task.result = response;
+
+                        this.resolveTask(queue, task, resolve, reject);
+                    })
+                    .catch((error: any) => {
+                        task.result = {
+                            state: 'send_email_error',
+                            error: error
+                        };
+
+                        this.rejectTask(queue, task, resolve, reject);
+                    });
             }
         );
         
