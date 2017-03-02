@@ -1,5 +1,7 @@
 /// <reference path="../typings/index.d.ts" />
 
+import { IDVerifier } from './interfaces/id-verifier';
+
 import * as firebase from 'firebase';
 import * as _ from 'lodash';
 import * as log from 'loglevel';
@@ -7,11 +9,15 @@ import * as log from 'loglevel';
 export class QueueProcessor {
     db: any;
     auth: any;
+    storage: any;
+    idVerifier: IDVerifier;
     Queue: any;
     _enabled: boolean;
 
     static db: any;
     static auth: any;
+    static storage: any;
+    static idVerifier: IDVerifier;
     static Queue: any;
 
     static env: any;
@@ -29,6 +35,8 @@ export class QueueProcessor {
     constructor() {
         this.db = QueueProcessor.db;
         this.auth = QueueProcessor.auth;
+        this.storage = QueueProcessor.storage;
+        this.idVerifier = QueueProcessor.idVerifier;
         this.Queue = QueueProcessor.Queue;
     }
 
