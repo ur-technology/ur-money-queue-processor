@@ -7,6 +7,7 @@ import { QueueProcessor } from './queue_processor';
 import { ChatQueueProcessor } from './chat';
 import { IdentityAnnouncementQueueProcessor } from './identity_announcement';
 import { PhoneLookupQueueProcessor } from './phone_lookup';
+import { SendEmailQueueProcessor } from './send_email';
 import { SignUpQueueProcessor } from './sign_up';
 import { SignInQueueProcessor } from './sign_in';
 import { VerifyIDQueueProcessor } from './verify_id';
@@ -47,6 +48,7 @@ let queueProcessors = _.map([
     ChatQueueProcessor,
     IdentityAnnouncementQueueProcessor,
     PhoneLookupQueueProcessor,
+    SendEmailQueueProcessor,
     SignUpQueueProcessor,
     SignInQueueProcessor,
     VerifyIDQueueProcessor,
