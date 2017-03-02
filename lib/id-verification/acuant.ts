@@ -135,7 +135,6 @@ export class AcuantIDVerifier {
 
                     if (!response.FacialMatch || response.FacialMatchConfidenceRating < selfieMatchThreshold) {
                         reject(`Can't automatically match selfie`);
-                        return;
                     }
 
                     return this.updateUserRecord(userID, { faceMatchData: response, selfieMatched: true });
