@@ -133,13 +133,20 @@ export class AcuantIDVerifier {
                 // Acuant connection succeeded
                 .then((response: any) => {
 
+                    let bonusApproved = true;
+
                     if (!response.FacialMatch || response.FacialMatchConfidenceRating < selfieMatchThreshold) {
+                        bonusApproved = false;
                         reject(`Can't automatically match selfie`);
                     }
 
-                    return this.updateUserRecord(userID, { faceMatchData: response, selfieMatched: true });
+                    return this.updateUserRecord(userID, {
+                        faceMatchData: response,
+                        selfieMatched: true,
+                        selfieConfidence: response.FacialMatchConfidenceRating,
+                        signUpBonusApproved: bonusApproved
+                    });
                 },
-
                 // Acuant connection failed
                 (err: any) => {
                     reject('failed to contact remote host');
