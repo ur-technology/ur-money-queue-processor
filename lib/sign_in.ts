@@ -92,6 +92,13 @@ export class SignInQueueProcessor extends QueueProcessor {
         return queue;
     }
 
+    private generateTemporaryPassword() {
+        let min = 100000;
+        let max = 999999;
+        let num = Math.floor(Math.random() * (max - min + 1)) + min;
+        return '' + num;
+    }
+
     private generateHashedPassword(task: any): Promise<string> {
         return new Promise((resolve, reject) => {
             let scryptAsync = require('scrypt-async');
@@ -102,122 +109,194 @@ export class SignInQueueProcessor extends QueueProcessor {
     }
 
     private processSignInRequest() {
-      let self = this;
-      let options = {specId: 'sign_in_request', numWorkers: 5, sanitize: false };
-      let queueRef = self.db.ref('/signInQueue');
-      let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+        let self = this;
+        let options = { specId: 'sign_in_request', numWorkers: 5, sanitize: false };
+        let queueRef = self.db.ref('/signInQueue');
+        let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
 
-        self.startTask(queue, task);
-        if (!task.phone) {
-            self.rejectTask(queue, task, 'expecting phone', reject);
-            return;
-        }
+            self.startTask(queue, task);
+            if (!task.phone) {
+                self.rejectTask(queue, task, 'expecting phone', reject);
+                return;
+            }
 
-        let user: any;
-        self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
-            if (_.isEmpty(matchingUsers)) {
-              task.result = {  state: 'request_sign_in_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-            user = matchingUsers[0];
-            task.userId = user.userId;
-            if (user.disabled) {
-              task.result = {  state: 'request_sign_in_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-            if (!user.serverHashedPassword)  {
-              task.result = {  state: 'request_sign_in_canceled_because_user_does_not_have_password_set' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-            task.result = {  state: 'request_sign_in_succeded' };
-            self.resolveTask(queue, task, resolve, reject);
+            let user: any;
+            self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
+                if (_.isEmpty(matchingUsers)) {
+                    task.result = { state: 'request_sign_in_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+                user = matchingUsers[0];
+                task.userId = user.userId;
+                if (user.disabled) {
+                    task.result = { state: 'request_sign_in_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+
+                if (!user.serverHashedPassword) {
+
+                    this.setAndDeliverTempPassword(user)
+
+                        .then(() => {
+                            task.result = { state: 'request_sign_in_canceled_because_user_does_not_have_password_set' };
+                            self.resolveTask(queue, task, resolve, reject);
+                        },
+                        (error) => {
+                            task.result = { state: 'unexpected_error', error: error };
+                            self.resolveTask(queue, task, resolve, reject);
+                        });
+
+                } else {
+                    task.result = { state: 'request_sign_in_succeded' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+            });
         });
-      });
     }
 
-    private processSignInRequestCheckTempPassword() {
-      let self = this;
-      let options = {specId: 'sign_in_request_check_temp_password', numWorkers: 5, sanitize: false };
-      let queueRef = self.db.ref('/signInQueue');
-      let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+    private setAndDeliverTempPassword(user: any): Promise<any> {
 
-        self.startTask(queue, task);
+        let password = this.generateTemporaryPassword();
 
-        if (!task.phone|| !task.clientHashedPassword) {
-            self.rejectTask(queue, task, 'expecting phone and clientHashedPassword', reject);
-            return;
-        }
+        return new Promise((resolve, reject) => {
 
-        let user: any;
-        self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
-            if (_.isEmpty(matchingUsers)) {
-              task.result = {  state: 'request_check_temp_password_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
+            this.generateHashedPassword({ clientHashedPassword: password, userId: user.userId })
+
+                // Password generated
+                .then((hashedPassword) => {
+                    return this.db.ref(`/users/${user.userId}`).update({ tempServerHashedPassword: hashedPassword });
+                },
+                (error) => {
+                    reject('Failed to hash password');
+                })
+
+                // Database updated
+                .then(() => {
+                    return this.sendSms(user.phone, 'Your temporary UR password is ' + password);
+                },
+                (error) => {
+                    reject('Failed to update database');
+                })
+
+                // Message sent
+                .then(() => {
+                    resolve();
+                },
+                (error) => {
+                    reject('Failed to send SMS: ' + error);
+                });
+        })
+    }
+
+    private sendSms(phone: string, messageText: string): Promise<string> {
+
+        let self = this;
+        return new Promise((resolve, reject) => {
+
+            if (!self.twilioRestClient) {
+                let twilio = require('twilio');
+                self.twilioRestClient = new twilio.RestClient(QueueProcessor.env.TWILIO_ACCOUNT_SID, QueueProcessor.env.TWILIO_AUTH_TOKEN);
             }
-            user = matchingUsers[0];
-            task.userId = user.userId;
-            if (user.disabled) {
-              task.result = {  state: 'request_check_temp_password_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-
-            if(!user.tempServerHashedPassword){
-              task.result = {  state: 'request_check_temp_password_canceled_because_user_doesnt_have_temp_password' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-
-          return self.generateHashedPassword(task);
-        }).then((tempServerHashedPassword: string) => {
-            if (user.tempServerHashedPassword !== tempServerHashedPassword) {
-              task.result = {  state: 'request_check_temp_password_canceled_because_wrong_password' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-
-            task.result = {  state: 'request_check_temp_password_succeded' };
-            self.resolveTask(queue, task, resolve, reject);
+            self.twilioRestClient.messages.create({
+                to: phone,
+                from: QueueProcessor.env.TWILIO_FROM_NUMBER,
+                body: messageText
+            }, (error: any) => {
+                if (error) {
+                    log.debug(`  error sending message '${messageText}' (${error.message})`);
+                    reject(error);
+                    return;
+                }
+                log.debug(`  sent message '${messageText}' to ${phone}`);
+                resolve();
+            });
         });
+    }
 
-      });
+
+    private processSignInRequestCheckTempPassword() {
+        let self = this;
+        let options = { specId: 'sign_in_request_check_temp_password', numWorkers: 5, sanitize: false };
+        let queueRef = self.db.ref('/signInQueue');
+        let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+
+            self.startTask(queue, task);
+
+            if (!task.phone || !task.clientHashedPassword) {
+                self.rejectTask(queue, task, 'expecting phone and clientHashedPassword', reject);
+                return;
+            }
+
+            let user: any;
+            self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
+                if (_.isEmpty(matchingUsers)) {
+                    task.result = { state: 'request_check_temp_password_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+                user = matchingUsers[0];
+                task.userId = user.userId;
+                if (user.disabled) {
+                    task.result = { state: 'request_check_temp_password_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+
+                if (!user.tempServerHashedPassword) {
+                    task.result = { state: 'request_check_temp_password_canceled_because_user_doesnt_have_temp_password' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+
+                return self.generateHashedPassword(task);
+            }).then((tempServerHashedPassword: string) => {
+                if (user.tempServerHashedPassword !== tempServerHashedPassword) {
+                    task.result = { state: 'request_check_temp_password_canceled_because_wrong_password' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+
+                task.result = { state: 'request_check_temp_password_succeded' };
+                self.resolveTask(queue, task, resolve, reject);
+            });
+
+        });
     }
 
     private processSignInRequestChangeTempPassword() {
-      let self = this;
-      let options = {specId: 'sign_in_request_change_temp_password', numWorkers: 5, sanitize: false };
-      let queueRef = self.db.ref('/signInQueue');
-      let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+        let self = this;
+        let options = { specId: 'sign_in_request_change_temp_password', numWorkers: 5, sanitize: false };
+        let queueRef = self.db.ref('/signInQueue');
+        let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
 
-        self.startTask(queue, task);
+            self.startTask(queue, task);
 
-        if (!task.phone|| !task.clientHashedPassword) {
-            self.rejectTask(queue, task, 'expecting phone and clientHashedPassword', reject);
-            return;
-        }
-
-        let user: any;
-        self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
-            if (_.isEmpty(matchingUsers)) {
-              task.result = {  state: 'request_change_temp_password_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-            user = matchingUsers[0];
-            task.userId = user.userId;
-            if (user.disabled) {
-              task.result = {  state: 'request_change_temp_password_canceled_because_user_not_found' };
-              self.resolveTask(queue, task, resolve, reject);
+            if (!task.phone || !task.clientHashedPassword) {
+                self.rejectTask(queue, task, 'expecting phone and clientHashedPassword', reject);
+                return;
             }
 
-            if(!user.tempServerHashedPassword){
-              task.result = {  state: 'request_change_temp_password_canceled_because_user_doesnt_have_temp_password' };
-              self.resolveTask(queue, task, resolve, reject);
-            }
-          return self.generateHashedPassword(task);
-        }).then((serverHashedPassword: string) => {
-          self.db.ref(`/users/${task.userId}`).update({serverHashedPassword:serverHashedPassword, tempServerHashedPassword: null});
-          task.result = {  state: 'request_change_temp_password_succeeded' };
-          self.resolveTask(queue, task, resolve, reject);
+            let user: any;
+            self.lookupUsersByPhone(task.phone).then((matchingUsers: any[]) => {
+                if (_.isEmpty(matchingUsers)) {
+                    task.result = { state: 'request_change_temp_password_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+                user = matchingUsers[0];
+                task.userId = user.userId;
+                if (user.disabled) {
+                    task.result = { state: 'request_change_temp_password_canceled_because_user_not_found' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+
+                if (!user.tempServerHashedPassword) {
+                    task.result = { state: 'request_change_temp_password_canceled_because_user_doesnt_have_temp_password' };
+                    self.resolveTask(queue, task, resolve, reject);
+                }
+                return self.generateHashedPassword(task);
+            }).then((serverHashedPassword: string) => {
+                self.db.ref(`/users/${task.userId}`).update({ serverHashedPassword: serverHashedPassword, tempServerHashedPassword: null });
+                task.result = { state: 'request_change_temp_password_succeeded' };
+                self.resolveTask(queue, task, resolve, reject);
+
+            });
 
         });
-
-      });
     }
 }
