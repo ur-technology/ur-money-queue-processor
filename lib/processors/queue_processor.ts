@@ -1,6 +1,6 @@
 /// <reference path="../../typings/index.d.ts" />
 
-import { IDVerifier } from './interfaces/id-verifier';
+import { IDVerifier } from '../interfaces/id-verifier';
 
 import * as firebase from 'firebase';
 import * as _ from 'lodash';
