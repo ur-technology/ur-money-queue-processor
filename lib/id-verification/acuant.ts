@@ -100,6 +100,9 @@ export class AcuantIDVerifier {
                         idHash: this.idHash(idCardData),
                         idCardData: _.omitBy(idCardData, _.isArray),
                         idUploaded: true,
+                        firstName: this.properNounCase(idCardData.NameFirst),
+                        middleName: this.properNounCase(idCardData.NameMiddle),
+                        lastName: this.properNounCase(idCardData.NameLast),
                         idRecognitionStatus: 'National ID successfully recognised by Acuant'
                     });
                 },
@@ -164,7 +167,7 @@ export class AcuantIDVerifier {
                         selfieMatched: true,
                         selfieConfidence: response.FacialMatchConfidenceRating,
                         signUpBonusApproved: bonusApproved,
-                        selfieMatchStatus: statusMessage
+                        selfieMatchStatus: statusMessage,
                     });
                 },
                 // Acuant connection failed
@@ -181,6 +184,10 @@ export class AcuantIDVerifier {
                     reject(error);
                 })
         });
+    }
+
+    private properNounCase(input: string): string {
+        return input.charAt(0).toUpperCase() + input.slice(1).toLowerCase();
     }
 
     private updateUserRecord(userID: string, data: any): Promise<any> {
