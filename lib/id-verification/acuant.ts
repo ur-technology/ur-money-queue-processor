@@ -60,13 +60,25 @@ export class AcuantIDVerifier {
                         (response.WebResponseCode < 1 && response.WebResponseCode);
 
                     if (error) {
-                        reject(`error processing id: ${error}`);
+                        this.updateUserRecord(userId, {
+                            idUploaded: true,
+                            signUpBonusApproved: false,
+                            idRecognitionStatus: 'National ID not recognised by Acuant'
+                        })
+                            .then(() => {
+                                reject(`error processing id: ${error}`);
+                            },
+                            (error2) => {
+                                reject(`error processing id: ${error}, and database updated failed: ${error2}`);
+                            });
+
+                    } else {
+
+                        idCardData = response;
+                        faceImage = response.FaceImage;
+
+                        return this.assertIdUniqueness(this.idHash(response), userId);
                     }
-
-                    idCardData = response;
-                    faceImage = response.FaceImage;
-
-                    return this.assertIdUniqueness(this.idHash(response), userId);
                 },
                 // Acuant connection failed
                 (err: any) => {
@@ -84,7 +96,12 @@ export class AcuantIDVerifier {
 
                 // Face image upload succeeded
                 .then(() => {
-                    return this.updateUserRecord(userId, { idHash: this.idHash(idCardData), idCardData: _.omitBy(idCardData, _.isArray), idUploaded: true });
+                    return this.updateUserRecord(userId, {
+                        idHash: this.idHash(idCardData),
+                        idCardData: _.omitBy(idCardData, _.isArray),
+                        idUploaded: true,
+                        idRecognitionStatus: 'National ID successfully recognised by Acuant'
+                    });
                 },
                 // Face image upload failed
                 (error) => {
@@ -134,9 +151,11 @@ export class AcuantIDVerifier {
                 .then((response: any) => {
 
                     let bonusApproved = true;
+                    let statusMessage = `Selfie match succeeded; confidence rating ${response.FacialMatchConfidenceRating}%`;
 
                     if (!response.FacialMatch || response.FacialMatchConfidenceRating < selfieMatchThreshold) {
                         bonusApproved = false;
+                        statusMessage = `Selfie match failed; confidence rating ${response.FacialMatchConfidenceRating}%`;
                         reject(`Can't automatically match selfie`);
                     }
 
@@ -144,7 +163,8 @@ export class AcuantIDVerifier {
                         faceMatchData: response,
                         selfieMatched: true,
                         selfieConfidence: response.FacialMatchConfidenceRating,
-                        signUpBonusApproved: bonusApproved
+                        signUpBonusApproved: bonusApproved,
+                        selfieMatchStatus: statusMessage
                     });
                 },
                 // Acuant connection failed
