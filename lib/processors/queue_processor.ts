@@ -13,6 +13,8 @@ export class QueueProcessor {
     idVerifier: IDVerifier;
     Queue: any;
     _enabled: boolean;
+    _queueName: string;
+    _queueRef: any;
 
     static db: any;
     static auth: any;
