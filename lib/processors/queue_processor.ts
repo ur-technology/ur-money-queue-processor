@@ -210,8 +210,8 @@ export class QueueProcessor {
                 let users = _.values(userMapping);
                 let userIds = _.keys(userMapping);
                 _.each(users, (user: any, index: number) => { user.userId = userIds[index]; });
-                let sortedUsers = _.reverse(_.sortBy(users, (user) => { return self.completenessRank(user); }));
-                let sortedUserIds = _.map(sortedUsers, (user) => { return user.userId });
+                let sortedUsers = _.orderBy(users, (user: any) => self.completenessRank(user), 'desc');
+                let sortedUserIds = _.map(sortedUsers, (user: any) => { return user.userId });
 
                 resolve(sortedUsers);
             }, (error: string) => {
