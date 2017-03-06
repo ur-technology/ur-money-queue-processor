@@ -151,9 +151,26 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
      * Process reset_password spec
      * 
      * The data provided are:
-     *  @server_reset_code: server reset code
      *  @reset_code:        reset code entered by user
      *  @new_password:      new password entered by user
      */
-    private processResetPasswordSpec() {}
+    private processResetPasswordSpec() {
+        let self = this;
+        let options = {
+            specId: 'reset_password',
+            numWorkers: 8,
+            sanitize: false
+        };
+        let queue = new self.Queue(
+            self._queueRef,
+            options,
+            (task: any, progress: any, resolve: any, reject: any) => {
+                // Check emptiness of reset code
+                // Check emptiness of new password
+                // Find user by reset code
+                // Update password of user
+                // Resolve the task
+            }
+        );
+    }
 }
