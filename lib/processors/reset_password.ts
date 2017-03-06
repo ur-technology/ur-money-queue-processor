@@ -2,15 +2,18 @@ import * as firebase from 'firebase';
 import * as _ from 'lodash';
 import * as log from 'loglevel';
 import { QueueProcessor } from './queue_processor';
+import { PasswordService } from '../services/password.service';
 import { SendGridService } from '../services/sendgrid.service';
 
 
 export class ResetPasswordQueueProcessor extends QueueProcessor {
+    private passwordService: PasswordService;
     private sendGridService: SendGridService;
 
     constructor() {
         super();
 
+        this.passwordService = PasswordService.getInstance();
         this.sendGridService = SendGridService.getInstance();
     }
 
@@ -99,14 +102,17 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         }
 
                         // Generate reset code
-                        resetCode = self.generateResetCode();
+                        resetCode = self.passwordService.generateCode();
                         // Send reset code email
                         return self.sendResetCodeEmail(task.email, resetCode);
                     })
                     .then((response: any) => {
                         // Update user
-                        return this.updateUserWithResetCode(user.userId, resetCode);
-                    }).then((response: any) => {
+                        return this.updateUser(user.userId, {
+                            resetCode,
+                        });
+                    })
+                    .then((response: any) => {
                         // Resolve task
                         self.resolveTask(queue, task, resolve, reject);
                     }, (error: any) => {
@@ -115,11 +121,6 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             }
         );
         return queue;
-    }
-
-    private generateResetCode() {
-        let chars: string = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
-        return _.sampleSize(chars, 6).join('');
     }
 
     private sendResetCodeEmail(email: string, resetCode: string) {
@@ -139,12 +140,10 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             );
     }
 
-    private updateUserWithResetCode(userId: string, resetCode: string) {
+    private updateUser(userId: string, payload: any) {
         let userRef = this.db.ref(`/users/${userId}`);
 
-        return userRef.update({
-            resetCode: resetCode
-        });
+        return userRef.update(payload);
     }
 
     /**
