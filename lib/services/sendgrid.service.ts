@@ -1,10 +1,18 @@
 import * as SendGrid from 'sendgrid';
 
 export class SendGridService {
+    private static _instance: SendGridService;
     private sendGrid: any;
 
     constructor(private sendgridApiKey: string) {
         this.sendGrid = SendGrid(sendgridApiKey);
+    }
+
+    static getInstance() {
+        if (!SendGridService._instance) {
+            SendGridService._instance = new SendGridService(process.env.SENDGRID_API_KEY);
+        }
+        return SendGridService._instance;
     }
 
     send(
