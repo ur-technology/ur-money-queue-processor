@@ -24,14 +24,16 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
         return [
             this.ensureQueueSpecLoaded(`/${this._queueName}/specs/send_reset_code`, {
-                "in_progress_state": "send_reset_code_in_progress",
-                "error_state": "send_reset_code_error",
-                "timeout": 5 * 60 * 1000
+                start_state: 'send_reset_code_requested',
+                in_progress_state: 'send_reset_code_in_progress',
+                error_state: 'send_reset_code_error',
+                timeout: 5 * 60 * 1000
             }),
             this.ensureQueueSpecLoaded(`/${this._queueName}/specs/reset_password`, {
-                "in_progress_state": "reset_password_in_progress",
-                "error_state": "reset_password_error",
-                "timeout": 5 * 60 * 1000
+                start_state: 'reset_password_requested',
+                in_progress_state: 'reset_password_in_progress',
+                error_state: 'reset_password_error',
+                timeout: 5 * 60 * 1000
             }),
             this.addSendResetCodeSampleTask()
         ];
@@ -39,6 +41,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
     private addSendResetCodeSampleTask(): Promise<any> {
         let data = {
+            _state: 'send_reset_code_requested',
             email: 'weidai1122@gmail.com'
         };
 
