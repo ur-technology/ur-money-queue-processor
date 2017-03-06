@@ -78,6 +78,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             self._queueRef,
             options,
             (task: any, progress: any, resolve: any, reject: any) => {
+                let user: any;
                 let resetCode: string;
 
                 self.startTask(queue, task);
@@ -94,8 +95,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                             throw 'send_reset_code_canceled_because_user_not_found';
                         }
 
-                        let user = matchingUsers[0];
-                        
+                        user = matchingUsers[0];
                         task.userId = user.userId;
                         if (user.disabled) {
                             throw 'send_reset_code_canceled_because_user_disabled';
@@ -107,8 +107,9 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         return self.sendResetCodeEmail(task.email, resetCode);
                     })
                     .then((response: any) => {
-                        // Update task
-                        task.resetCode = resetCode;
+                        // Update user
+                        return this.updateUserWithResetCode(user.userId, resetCode);
+                    }).then((response: any) => {
                         // Resolve task
                         self.resolveTask(queue, task, resolve, reject);
                     }, (error: any) => {
@@ -139,6 +140,14 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                 content,
                 contentType
             );
+    }
+
+    private updateUserWithResetCode(userId: string, resetCode: string) {
+        let userRef = this.db.ref(`/users/${userId}`);
+
+        return userRef.update({
+            resetCode: resetCode
+        });
     }
 
     /**
