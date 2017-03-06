@@ -35,16 +35,19 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                 error_state: 'reset_password_error',
                 timeout: 5 * 60 * 1000
             }),
-            this.addSendResetCodeSampleTask()
+            // this.addSampleTask({
+            //     _state: 'send_reset_code_requested',
+            //     email: 'weidai1122@gmail.com'
+            // }),
+            // this.addSampleTask({
+            //     _state: 'reset_password_requested',
+            //     resetCode: 'cRxCDf',
+            //     newPassword: 'password',
+            // }),
         ];
     }
 
-    private addSendResetCodeSampleTask(): Promise<any> {
-        let data = {
-            _state: 'send_reset_code_requested',
-            email: 'weidai1122@gmail.com'
-        };
-
+    private addSampleTask(data: any): Promise<any> {
         return new Promise((resolve, reject) => {
             const tasksRef = this._queueRef.child('tasks');
             tasksRef.push(data, (error: any) => {
@@ -60,7 +63,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
     process(): any[] {
         return [
             this.processSendResetCodeSpec(),
-            // this.processResetPasswordSpec(),
+            this.processResetPasswordSpec(),
         ]
     }
 
@@ -99,7 +102,6 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         }
 
                         user = matchingUsers[0];
-                        task.userId = user.userId;
                         if (user.disabled) {
                             throw 'send_reset_code_canceled_because_user_disabled';
                         }
@@ -123,6 +125,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                     });
             }
         );
+        
         return queue;
     }
 
@@ -167,12 +170,51 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             self._queueRef,
             options,
             (task: any, progress: any, resolve: any, reject: any) => {
+                let user: any;
+
+                self.startTask(queue, task);
+
                 // Check emptiness of reset code
+                if (!task.resetCode) {
+                    throw 'reset_password_canceled_because_reset_code_empty';
+                }
+
                 // Check emptiness of new password
+                if (!task.newPassword) {
+                    throw 'reset_password_canceled_because_new_password_empty';
+                }
+
                 // Find user by reset code
-                // Update password of user
-                // Resolve the task
+                self.lookupUsersByResetCode(task.resetCode)
+                    .then((matchingUsers: any[]) => {
+                        if (_.isEmpty(matchingUsers)) {
+                            throw 'reset_password_canceled_because_user_not_found';
+                        }
+
+                        user = matchingUsers[0];
+                        if (user.disabled) {
+                            throw 'send_reset_code_canceled_because_user_disabled';
+                        }
+
+                        // Generate hashed password
+                        return this.passwordService.hashPassword(task.newPassword, user.userId);
+                    })
+                    .then((hashedPassword: string) => {
+                        // Update password of user
+                        return this.updateUser(user.userId, {
+                            serverHashedPassword: hashedPassword,
+                            resetCode: '',
+                        });
+                    })
+                    .then((response: any) => {
+                        // Resolve task
+                        self.resolveTask(queue, task, resolve, reject);
+                    }, (error: any) => {
+                        self.rejectTask(queue, task, error, reject);
+                    });
             }
         );
+
+        return queue;
     }
 }
