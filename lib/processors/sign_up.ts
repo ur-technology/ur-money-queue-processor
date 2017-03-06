@@ -115,7 +115,7 @@ export class SignUpQueueProcessor extends QueueProcessor {
             log.debug(`  submittedAuthenticationCode ${task.submittedAuthenticationCode} ${codeMatch ? 'matches' : 'does not match'} actual authenticationCode`);
             if (!codeMatch) {
                 task.result = { codeMatch: false };
-                task._new_state = 'code_matching_finished';
+                task._new_state = 'code_matching_canceled_because_no_match';
                 self.resolveTask(queue, task, resolve, reject);
                 return;
             }
@@ -129,7 +129,7 @@ export class SignUpQueueProcessor extends QueueProcessor {
                 return self.auth.createCustomToken(task.userId, { tokenVersion: 4 });
             }).then((customToken: string) => {
                 task.result = { codeMatch: true, authToken: customToken };
-                task._new_state = 'code_matching_finished';
+                task._new_state = 'code_matching_succeeded';
                 self.resolveTask(queue, task, resolve, reject);
             }, (error: any) => {
                 task.result = { codeMatch: false, error: error };
