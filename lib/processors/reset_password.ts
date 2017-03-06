@@ -13,15 +13,14 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
     constructor() {
         super();
 
+        this._queueName = 'resetPasswordQueue';
+        this._queueRef = this.db.ref(`/${this._queueName}`);
+        
         this.passwordService = PasswordService.getInstance();
         this.sendGridService = SendGridService.getInstance();
     }
 
     init(): Promise<any>[] {
-
-        this._queueName = 'resetPasswordQueue';
-        this._queueRef = this.db.ref(`/${this._queueName}`);
-
         return [
             this.ensureQueueSpecLoaded(`/${this._queueName}/specs/send_reset_code`, {
                 start_state: 'send_reset_code_requested',
