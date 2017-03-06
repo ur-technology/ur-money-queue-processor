@@ -11,7 +11,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
     constructor() {
         super();
 
-        this.sendGridService = new SendGridService(process.env.SENDGRID_API_KEY);
+        this.sendGridService = SendGridService.getInstance();
     }
 
     init(): Promise<any>[] {

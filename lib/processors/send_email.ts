@@ -9,7 +9,7 @@ export class SendEmailQueueProcessor extends QueueProcessor {
     constructor() {
         super();
 
-        this.sendGridService = new SendGridService(process.env.SENDGRID_API_KEY);
+        this.sendGridService = SendGridService.getInstance();
     }
 
     init(): Promise<any>[] {
@@ -20,7 +20,7 @@ export class SendEmailQueueProcessor extends QueueProcessor {
                 finished_state: 'send_email_finished',
                 error_state: 'send_email_error',
                 timeout: 5 * 60 * 1000
-            })
+            }),
             // this.addSampleTask()
         ];
     }
