@@ -33,13 +33,31 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                 "error_state": "reset_password_error",
                 "timeout": 5 * 60 * 1000
             }),
+            this.addSendResetCodeSampleTask()
         ];
+    }
+
+    private addSendResetCodeSampleTask(): Promise<any> {
+        let data = {
+            email: 'weidai1122@gmail.com'
+        };
+
+        return new Promise((resolve, reject) => {
+            const tasksRef = this._queueRef.child('tasks');
+            tasksRef.push(data, (error: any) => {
+                if (error) {
+                    reject(error.message);
+                } else {
+                    resolve(data);
+                }
+            });
+        });
     }
 
     process(): any[] {
         return [
             this.processSendResetCodeSpec(),
-            this.processResetPasswordSpec(),
+            // this.processResetPasswordSpec(),
         ]
     }
 
@@ -106,11 +124,11 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         return _.sampleSize(chars, 6).join('');
     }
 
-    private sendResetCodeEmail(email, resetCode) {
+    private sendResetCodeEmail(email: string, resetCode: string) {
         let from = process.env.UR_SUPPORT_EMAIL;
         let to = email;
         let subject = 'Password reset code';
-        let content = `Reset code is ${resetCode}`;
+        let content = `Password reset code is ${resetCode}`;
         let contentType = 'text/plain';
         
         this.sendGridService
