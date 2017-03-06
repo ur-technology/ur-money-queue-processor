@@ -10,15 +10,12 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
     private passwordService: PasswordService;
     private sendGridService: SendGridService;
 
-    private specs: any;
-
     constructor() {
         super();
 
         this._queueName = 'resetPasswordQueue';
         this._queueRef = this.db.ref(`/${this._queueName}`);
-        
-        this.specs = {
+        this._specs = {
             send_reset_code: {
                 start_state: 'send_reset_code_requested',
                 in_progress_state: 'send_reset_code_in_progress',
@@ -37,13 +34,16 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         
         this.passwordService = PasswordService.getInstance();
         this.sendGridService = SendGridService.getInstance();
-
     }
 
     init(): Promise<any>[] {
         return [
-            this.ensureQueueSpecLoaded(`/${this._queueName}/specs/send_reset_code`, this.specs['send_reset_code']),
-            this.ensureQueueSpecLoaded(`/${this._queueName}/specs/reset_password`, this.specs['reset_password']),
+            ...(_.map(this._specs, (val: any, key: string) => {
+                return this.ensureQueueSpecLoaded(
+                    `/${this._queueName}/specs/${key}`,
+                    val
+                );
+            })),
             // this.addSampleTask({
             //     _state: 'send_reset_code_requested',
             //     email: 'weidai1122@gmail.com'
@@ -129,7 +129,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                     .then((response: any) => {
                         // Resolve task
                         task.result = {
-                            state: this.specs['send_reset_code']['finished_state'],
+                            state: this._specs['send_reset_code']['finished_state'],
                         };
                         self.resolveTask(queue, task, resolve, reject);
                     }, (error: any) => {
@@ -141,7 +141,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                             self.resolveTask(queue, task, resolve, reject);
                         } else {
                             task.result = {
-                                state: this.specs['send_reset_code']['error_state'],
+                                state: this._specs['send_reset_code']['error_state'],
                                 error,
                             };
                             self.resolveTask(queue, task, resolve, reject);
@@ -233,7 +233,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                     .then((response: any) => {
                         // Resolve task
                         task.result = {
-                            state: this.specs['reset_password']['finished_state'],
+                            state: this._specs['reset_password']['finished_state'],
                         };
                         self.resolveTask(queue, task, resolve, reject);
                     }, (error: any) => {
@@ -245,7 +245,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                             self.resolveTask(queue, task, resolve, reject);
                         } else {
                             task.result = {
-                                state: this.specs['reset_password']['error_state'],
+                                state: this._specs['reset_password']['error_state'],
                                 error,
                             };
                             self.resolveTask(queue, task, resolve, reject);

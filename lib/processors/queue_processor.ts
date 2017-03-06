@@ -15,6 +15,7 @@ export class QueueProcessor {
     _enabled: boolean;
     _queueName: string;
     _queueRef: any;
+    _specs: any;
 
     static db: any;
     static auth: any;
