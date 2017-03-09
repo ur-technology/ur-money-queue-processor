@@ -213,11 +213,14 @@ export class QueueProcessor {
 
                 // sort matching users with most completely signed up users first
                 let userMapping = snapshot.val() || {};
-                let users = _.values(userMapping);
-                let userIds = _.keys(userMapping);
-                _.each(users, (user: any, index: number) => { user.userId = userIds[index]; });
-                let sortedUsers = _.orderBy(users, (user: any) => self.completenessRank(user), 'desc');
-                let sortedUserIds = _.map(sortedUsers, (user: any) => { return user.userId });
+                let sortedUsers = _
+                    .chain(userMapping)
+                    .map((user: any, id: string) => {
+                        user.userId = id;
+                        return user;
+                    })
+                    .orderBy((user: any) => self.completenessRank(user), 'desc')
+                    .value();
 
                 resolve(sortedUsers);
             }, (error: string) => {
