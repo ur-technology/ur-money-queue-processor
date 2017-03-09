@@ -16,11 +16,11 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         this._queueName = 'resetPasswordQueue';
         this._queueRef = this.db.ref(`/${this._queueName}`);
         this._specs = {
-            send_reset_code: {
-                start_state: 'send_reset_code_requested',
-                in_progress_state: 'send_reset_code_in_progress',
-                finished_state: 'send_reset_code_finished',
-                error_state: 'send_reset_code_error',
+            send_recovery_email: {
+                start_state: 'send_recovery_email_requested',
+                in_progress_state: 'send_recovery_email_in_progress',
+                finished_state: 'send_recovery_email_finished',
+                error_state: 'send_recovery_email_error',
                 timeout: 5 * 60 * 1000
             },
             reset_password: {
@@ -45,7 +45,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                 );
             })),
             // this.addSampleTask({
-            //     _state: 'send_reset_code_requested',
+            //     _state: 'send_recovery_email_requested',
             //     phone: '+8617099967948',
             //     email: 'weidai1122@gmail.com'
             // }),
@@ -72,22 +72,22 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
     process(): any[] {
         return [
-            this.processSendResetCodeSpec(),
+            this.processSendRecoveryEmailSpec(),
             this.processResetPasswordSpec(),
         ]
     }
 
     /**
-     * Process send_reset_code spec
+     * Process send_recovery_email spec
      * 
      * The data provided are:
      *  @phone: phone of user who requested to reset password
      *  @email: email of user who requested to reset password
      */
-    private processSendResetCodeSpec() {
+    private processSendRecoveryEmailSpec() {
         let self = this;
         let options = {
-            specId: 'send_reset_code',
+            specId: 'send_recovery_email',
             numWorkers: 8,
             sanitize: false
         };
@@ -102,30 +102,30 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
                 // Check phone emptiness
                 if (!task.phone) {
-                    throw 'send_reset_code_canceled_because_phone_empty';
+                    throw 'send_recovery_email_canceled_because_phone_empty';
                 }
                 
                 // Check email emptiness
                 if (!task.email) {
-                    throw 'send_reset_code_canceled_because_email_empty';
+                    throw 'send_recovery_email_canceled_because_email_empty';
                 }
                 
                 // Check if email exists
                 self.lookupUsersByEmail(task.email)
                     .then((matchingUsers: any[]) => {
                         if (_.isEmpty(matchingUsers)) {
-                            throw 'send_reset_code_canceled_because_user_not_found';
+                            throw 'send_recovery_email_canceled_because_user_not_found';
                         }
 
                         user = matchingUsers[0];
                         if (user.disabled) {
-                            throw 'send_reset_code_canceled_because_user_disabled';
+                            throw 'send_recovery_email_canceled_because_user_disabled';
                         }
 
                         // Generate reset code
                         resetCode = self.passwordService.generateCode();
                         // Send reset code email
-                        return self.sendResetCodeEmail(task.email, resetCode);
+                        return self.sendRecoveryEmail(task.email, resetCode);
                     })
                     .then((response: any) => {
                         // Update user
@@ -136,11 +136,11 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                     .then((response: any) => {
                         // Resolve task
                         task.result = {
-                            state: this._specs['send_reset_code']['finished_state'],
+                            state: this._specs['send_recovery_email']['finished_state'],
                         };
                         self.resolveTask(queue, task, resolve, reject);
                     }, (error: any) => {
-                        if (_.isString(error) && /^send_reset_code_canceled_/.test(error)) {
+                        if (_.isString(error) && /^send_recovery_email_canceled_/.test(error)) {
                             task.result = {
                                 state: error,
                                 error,
@@ -148,7 +148,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                             self.resolveTask(queue, task, resolve, reject);
                         } else {
                             task.result = {
-                                state: this._specs['send_reset_code']['error_state'],
+                                state: this._specs['send_recovery_email']['error_state'],
                                 error,
                             };
                             self.resolveTask(queue, task, resolve, reject);
@@ -160,11 +160,11 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         return queue;
     }
 
-    private sendResetCodeEmail(email: string, resetCode: string) {
+    private sendRecoveryEmail(email: string, resetCode: string) {
         let from = process.env.UR_SUPPORT_EMAIL;
         let to = email;
-        let subject = 'Password reset code';
-        let content = `Password reset code is ${resetCode}`;
+        let subject = 'UR Password reset code';
+        let content = `UR Password reset code is ${resetCode}`;
         let contentType = 'text/plain';
         
         this.sendGridService
