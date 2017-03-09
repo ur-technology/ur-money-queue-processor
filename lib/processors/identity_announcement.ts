@@ -6,7 +6,15 @@ import { BigNumber } from 'bignumber.js';
 
 export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     init(): Promise<any>[] {
+
         return [
+
+            this.ensureQueueSpecLoaded("/walletCreatedQueue/specs/wallet_created", {
+                "in_progress_state": "processing",
+                "error_state": "error",
+                "timeout": 120000,
+            }),
+
             this.ensureQueueSpecLoaded("/identityAnnouncementQueue/specs/announce_identity", {
                 "start_state": "ready_to_announce",
                 "in_progress_state": "processing",
@@ -18,6 +26,52 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
     }
 
     process(): any[] {
+        return [
+            this.processWalletCreated(),
+            this.processIdentityAnnouncement(),
+        ]
+    }
+
+    private processWalletCreated(): any {
+
+        let self = this;
+        let queueRef = self.db.ref("/walletCreatedQueue");
+        let options = { 'specId': 'wallet_created', 'numWorkers': 1, 'sanitize': false };
+
+        let idAnnouncementQueueRef = self.db.ref("/identityAnnouncementQueue/tasks");
+
+        let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+
+            self.startTask(queue, task);
+            let userId: string = task.userId;
+
+            this.lookupUserNeedingAnnouncementTransaction(userId)
+
+                // user is allowed to receive their reward
+                .then(() => {
+                    return idAnnouncementQueueRef.push({
+                        userId: userId,
+                        _state: 'ready_to_announce',
+                    });
+                },
+                (error) => {
+                    // Resolve the task to remove it from the queue
+                    self.resolveTask(queue, task, resolve, reject);
+                })
+
+                // Task has been successfully pushed to ID announcement queue
+                .then(() => {
+                    self.resolveTask(queue, task, resolve, reject);
+                },
+                (error) => {
+                    self.rejectTask(queue, task, error, reject);
+                });
+
+        });
+        return queue;
+    }
+
+    private processIdentityAnnouncement(): any {
         let self = this;
         let queueRef = self.db.ref("/identityAnnouncementQueue");
         let options = { 'specId': 'announce_identity', 'numWorkers': 1, 'sanitize': false };
@@ -47,7 +101,7 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
                 }
             });
         });
-        return [queue];
+        return queue;
     }
 
     private lookupUserNeedingAnnouncementTransaction(userId: string): Promise<any> {

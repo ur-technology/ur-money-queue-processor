@@ -7,3 +7,5 @@ build/
 *.js
 *.js.map
 *.orig
+.node-xmlhttprequest-sync-*
+.node-xmlhttprequest-content-*
