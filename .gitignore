@@ -9,3 +9,6 @@ build/
 *.orig
 .node-xmlhttprequest-sync-*
 .node-xmlhttprequest-content-*
+
+VSCode
+settings.json
