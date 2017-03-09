@@ -46,6 +46,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             })),
             // this.addSampleTask({
             //     _state: 'send_reset_code_requested',
+            //     phone: '+8617099967948',
             //     email: 'weidai1122@gmail.com'
             // }),
             // this.addSampleTask({
@@ -80,6 +81,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
      * Process send_reset_code spec
      * 
      * The data provided are:
+     *  @phone: phone of user who requested to reset password
      *  @email: email of user who requested to reset password
      */
     private processSendResetCodeSpec() {
@@ -98,6 +100,11 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
                 self.startTask(queue, task);
 
+                // Check phone emptiness
+                if (!task.phone) {
+                    throw 'send_reset_code_canceled_because_phone_empty';
+                }
+                
                 // Check email emptiness
                 if (!task.email) {
                     throw 'send_reset_code_canceled_because_email_empty';
