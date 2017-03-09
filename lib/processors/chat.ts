@@ -18,7 +18,7 @@ export class ChatQueueProcessor extends QueueProcessor {
     private processChatSummaryCopyingQueue() {
         let self = this;
         let queueRef = self.db.ref("/chatSummaryCopyingQueue");
-        let options = { 'numWorkers': 1 };
+        let options = { 'numWorkers': 1, 'sanitize': false };
         let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
             self.startTask(queue, task);
             self.lookupChatSummary(task.userId, task.chatId).then((chatSummary) => {
@@ -40,7 +40,7 @@ export class ChatQueueProcessor extends QueueProcessor {
     private processChatMessageCopyingQueue() {
         let self = this;
         let queueRef = self.db.ref("/chatMessageCopyingQueue");
-        let options = { 'numWorkers': 1 };
+        let options = { 'numWorkers': 1, 'sanitize': false };
         let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
             self.startTask(queue, task);
             self.lookupChatSummary(task.userId, task.chatId).then((chatSummary) => {
