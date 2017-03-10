@@ -96,7 +96,6 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             options,
             (task: any, progress: any, resolve: any, reject: any) => {
                 let user: any;
-                let resetCode: string;
 
                 self.startTask(queue, task);
 
@@ -123,15 +122,15 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         }
 
                         // Generate reset code
-                        resetCode = self.passwordService.generateCode();
-                        // Send reset code email
-                        return self.sendRecoveryEmail(task.email, resetCode);
-                    })
-                    .then((response: any) => {
+                        const resetCode = self.passwordService.generateCode(32);
                         // Update user
                         return this.updateUser(user.userId, {
                             resetCode,
                         });
+                    })
+                    .then((response: any) => {
+                        // Send reset code email
+                        return self.sendRecoveryEmail(user);
                     })
                     .then((response: any) => {
                         // Resolve task
@@ -160,20 +159,18 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         return queue;
     }
 
-    private sendRecoveryEmail(email: string, resetCode: string): Promise<any> {
-        let from = process.env.UR_SUPPORT_EMAIL;
-        let to = email;
-        let subject = 'UR Password reset code';
-        let text = `UR Password reset code is ${resetCode}`;
-        let html = `<p>${text}</p>`;
+    private sendRecoveryEmail(user: any): Promise<any> {
+        const resetLink = `${process.env.APP_BASE_URL}/reset-password?code=${user.resetCode}`;
         
         return this.mailerService
-            .send(
-                from,
-                to,
-                subject,
-                text,
-                html
+            .sendWithTemplate(
+                process.env.UR_SUPPORT_EMAIL,
+                user.email,
+                'reset-password',
+                {
+                    name: user.name,
+                    resetLink
+                }
             );
     }
 
