@@ -111,7 +111,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                 }
                 
                 // Check if email exists
-                self.lookupUsersByEmail(task.email)
+                self.lookupUsersByPhoneAndEmail(task.phone, task.email)
                     .then((matchingUsers: any[]) => {
                         if (_.isEmpty(matchingUsers)) {
                             throw 'send_recovery_email_canceled_because_user_not_found';

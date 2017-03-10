@@ -191,6 +191,13 @@ export class QueueProcessor {
         return this.lookupUsers(ref);
     }
     
+    lookupUsersByPhoneAndEmail(phone: string, email: string): Promise<any[]> {
+        return this.lookupUsersByPhone(phone)
+            .then((matchingUsers: any[]) => {
+                return _.filter(matchingUsers, (user: any) => user.email === email);
+            });
+    }
+    
     lookupUsersByResetCode(resetCode: string): Promise<any[]> {
         let ref = this.db.ref("/users").orderByChild("resetCode").equalTo(resetCode);
         return this.lookupUsers(ref);
