@@ -12,7 +12,7 @@ export class PasswordService {
         return PasswordService._instance;
     }
 
-    generateCode(len = 6) {
+    generateCode(len: number = 6) {
         let chars: string = '23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
         return _.sampleSize(chars, len).join('');
     }
