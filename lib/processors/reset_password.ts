@@ -122,10 +122,10 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         }
 
                         // Generate reset code
-                        const resetCode = self.passwordService.generateCode(32);
+                        user.resetCode = self.passwordService.generateCode(32);
                         // Update user
                         return this.updateUser(user.userId, {
-                            resetCode,
+                            resetCode: user.resetCode
                         });
                     })
                     .then((response: any) => {
@@ -160,7 +160,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
     }
 
     private sendRecoveryEmail(user: any): Promise<any> {
-        const resetLink = `${process.env.APP_BASE_URL}/reset-password?code=${user.resetCode}`;
+        const resetLink = `${process.env.APP_BASE_URL}?reset-code=${user.resetCode}`;
         
         return this.mailerService
             .sendWithTemplate(
