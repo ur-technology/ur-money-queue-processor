@@ -3,12 +3,12 @@ import * as _ from 'lodash';
 import * as log from 'loglevel';
 import { QueueProcessor } from './queue_processor';
 import { PasswordService } from '../services/password.service';
-import { SendGridService } from '../services/sendgrid.service';
+import { MailerService } from '../services/mailer.service';
 
 
 export class ResetPasswordQueueProcessor extends QueueProcessor {
     private passwordService: PasswordService;
-    private sendGridService: SendGridService;
+    private mailerService: MailerService;
 
     constructor() {
         super();
@@ -33,7 +33,7 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         };
         
         this.passwordService = PasswordService.getInstance();
-        this.sendGridService = SendGridService.getInstance();
+        this.mailerService = MailerService.getInstance();
     }
 
     init(): Promise<any>[] {
@@ -160,20 +160,20 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         return queue;
     }
 
-    private sendRecoveryEmail(email: string, resetCode: string) {
+    private sendRecoveryEmail(email: string, resetCode: string): Promise<any> {
         let from = process.env.UR_SUPPORT_EMAIL;
         let to = email;
         let subject = 'UR Password reset code';
-        let content = `UR Password reset code is ${resetCode}`;
-        let contentType = 'text/plain';
+        let text = `UR Password reset code is ${resetCode}`;
+        let html = `<p>${text}</p>`;
         
-        this.sendGridService
+        return this.mailerService
             .send(
                 from,
                 to,
                 subject,
-                content,
-                contentType
+                text,
+                html
             );
     }
 

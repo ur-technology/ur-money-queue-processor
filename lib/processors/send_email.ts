@@ -1,15 +1,15 @@
 import * as _ from 'lodash';
 import { QueueProcessor } from './queue_processor';
-import { SendGridService } from '../services/sendgrid.service';
+import { MailerService } from '../services/mailer.service';
 
 
 export class SendEmailQueueProcessor extends QueueProcessor {
-    private sendGridService: SendGridService;
+    private mailerService: MailerService;
 
     constructor() {
         super();
 
-        this.sendGridService = SendGridService.getInstance();
+        this.mailerService = MailerService.getInstance();
     }
 
     init(): Promise<any>[] {
@@ -52,6 +52,16 @@ export class SendEmailQueueProcessor extends QueueProcessor {
         ]
     }
 
+    /**
+     * Process send_email spec
+     * 
+     * The data provided are:
+     *  @from:      From
+     *  @to:        To
+     *  @subject:   Subject
+     *  @text:      Text
+     *  @html:      Html
+     */
     private processSendEmailSpec() {
         const queueOptions = {
             specId: 'send_email',
@@ -78,8 +88,14 @@ export class SendEmailQueueProcessor extends QueueProcessor {
                     return;
                 }
 
-                this.sendGridService
-                    .send(task.from, task.to, task.subject, task.content, task.contentType)
+                this.mailerService
+                    .send(
+                        task.from,
+                        task.to,
+                        task.subject,
+                        task.text,
+                        task.html
+                    )
                     .then((response: any) => {
                         task._new_state = 'send_email_finished';
                         task.result = response;
