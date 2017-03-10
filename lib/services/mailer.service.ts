@@ -1,10 +1,13 @@
+let path = require('path');
 let nodemailer = require('nodemailer');
 let sgTransport = require('nodemailer-sendgrid-transport');
+let EmailTemplate = require('email-templates').EmailTemplate;
 
 
 export class MailerService {
     private static _instance: MailerService;
     private mailer: any;
+    private templatesRoot: string;
 
     constructor(private sgApiKey: string) {
         this.mailer = nodemailer.createTransport(sgTransport({
@@ -12,6 +15,8 @@ export class MailerService {
                 api_key: sgApiKey
             }
         }));
+
+        this.templatesRoot = path.resolve(__dirname, '..', '..', 'mails');
     }
 
     static getInstance() {
@@ -44,5 +49,22 @@ export class MailerService {
                     }
                 });
         });
+    }
+
+    sendWithTemplate(from: string, to: string, templateName: string, context: any): Promise<any> {
+        const templatesDir = path.join(this.templatesRoot, templateName);
+        const emailTemplates = new EmailTemplate(templatesDir);
+
+        return emailTemplates
+            .render(context)
+            .then((result: any) => {
+                return this.send(
+                    from,
+                    to,
+                    result.subject,
+                    result.text,
+                    result.html
+                );
+            });
     }
 }
