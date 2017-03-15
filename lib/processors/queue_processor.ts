@@ -75,6 +75,19 @@ export class QueueProcessor {
         });
     }
 
+    addSampleTask(data: any): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const tasksRef = this._queueRef.child('tasks');
+            tasksRef.push(data, (error: any) => {
+                if (error) {
+                    reject(error.message);
+                } else {
+                    resolve(data);
+                }
+            });
+        });
+    }
+
     generateProfilePhotoUrl(user: any) {
         let colorScheme = _.sample([{
             background: "DD4747",
