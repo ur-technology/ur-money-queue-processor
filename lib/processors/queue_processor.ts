@@ -220,6 +220,11 @@ export class QueueProcessor {
         let ref = this.db.ref("/users").orderByChild("referralCode").equalTo(referralCode);
         return this.lookupUsers(ref);
     }
+    
+    lookupUsersByVerificationCode(verificationCode: string): Promise<any[]> {
+        let ref = this.db.ref("/users").orderByChild("verificationCode").equalTo(verificationCode);
+        return this.lookupUsers(ref);
+    }
 
     lookupUsersByPrefineryId(id: string): Promise<any[]> {
         let ref = this.db.ref("/users").orderByChild("prefineryUser/id").equalTo(id);
