@@ -57,19 +57,6 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
         ];
     }
 
-    private addSampleTask(data: any): Promise<any> {
-        return new Promise((resolve, reject) => {
-            const tasksRef = this._queueRef.child('tasks');
-            tasksRef.push(data, (error: any) => {
-                if (error) {
-                    reject(error.message);
-                } else {
-                    resolve(data);
-                }
-            });
-        });
-    }
-
     process(): any[] {
         return [
             this.processSendRecoveryEmailSpec(),

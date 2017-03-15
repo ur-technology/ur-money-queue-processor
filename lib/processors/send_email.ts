@@ -9,41 +9,39 @@ export class SendEmailQueueProcessor extends QueueProcessor {
     constructor() {
         super();
 
+        this._queueName = 'sendEmailQueue';
+        this._queueRef = this.db.ref(`/${this._queueName}`);
+        this._specs = {
+            send_email: {
+                start_state: 'send_email_requested',
+                in_progress_state: 'send_email_in_progress',
+                finished_state: 'send_email_finished',
+                error_state: 'send_email_error',
+                timeout: 5 * 60 * 1000
+            }
+        };
+
         this.mailerService = MailerService.getInstance();
     }
 
     init(): Promise<any>[] {
 
         return [
-            this.ensureQueueSpecLoaded('/sendEmailQueue/specs/send_email', {
-                in_progress_state: 'send_email_in_progress',
-                finished_state: 'send_email_finished',
-                error_state: 'send_email_error',
-                timeout: 5 * 60 * 1000
-            }),
-            // this.addSampleTask()
+            ...(_.map(this._specs, (val: any, key: string) => {
+                return this.ensureQueueSpecLoaded(
+                    `/${this._queueName}/specs/${key}`,
+                    val
+                );
+            })),
+            // this.addSampleTask({
+            //     _state: 'send_email_requested',
+            //     from: 'support@ur.com',
+            //     to: 'weidai1122@gmail.com',
+            //     subject: 'Hello',
+            //     contentType: 'text/plain',
+            //     content: 'Hello Haohong'
+            // })
         ];
-    }
-
-    private addSampleTask(): Promise<any> {
-        const data = {
-            from: 'support@ur.com',
-            to: 'weidai1122@gmail.com',
-            subject: 'Hello',
-            contentType: 'text/plain',
-            content: 'Hello Haohong'
-        };
-
-        return new Promise((resolve, reject) => {
-            const tasksRef = this.db.ref('/sendEmailQueue/tasks');
-            tasksRef.push(data, (error: any) => {
-                if (error) {
-                    reject(error.message);
-                } else {
-                    resolve(data);
-                }
-            });
-        });
     }
 
     process(): any[] {
@@ -68,9 +66,8 @@ export class SendEmailQueueProcessor extends QueueProcessor {
             numWorkers: 8,
             sanitize: false
         };
-        const queueRef = this.db.ref('/sendEmailQueue');
         const queue = new this.Queue(
-            queueRef,
+            this._queueRef,
             queueOptions,
             (task: any, progress: any, resolve: any, reject: any) => {
                 this.startTask(queue, task);
