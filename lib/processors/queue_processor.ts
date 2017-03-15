@@ -383,4 +383,10 @@ export class QueueProcessor {
             });
         });
     }
+
+    updateUser(userId: string, payload: any) {
+        let userRef = this.db.ref(`/users/${userId}`);
+
+        return userRef.update(payload);
+    }
 }

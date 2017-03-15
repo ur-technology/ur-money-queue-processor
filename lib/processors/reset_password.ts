@@ -170,12 +170,6 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
             );
     }
 
-    private updateUser(userId: string, payload: any) {
-        let userRef = this.db.ref(`/users/${userId}`);
-
-        return userRef.update(payload);
-    }
-
     /**
      * Process reset_password spec
      * 
