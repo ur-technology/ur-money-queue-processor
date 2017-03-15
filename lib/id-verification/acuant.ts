@@ -122,6 +122,21 @@ export class AcuantIDVerifier {
         });
     }
 
+    /*
+    Don't even try to match the selfie; just update the database and let a human fix it.
+    */
+    bypassSelfieMatch(userID: string): Promise<any> {
+        return this.updateUserRecord(userID, {
+            selfieMatched: true,
+            selfieConfidence: 0,
+            signUpBonusApproved: false,
+            selfieMatchStatus: "Automatic selfie match not attempted",
+        });
+    }
+
+    /*
+    Automatically match the selfie using Acuant's face matching API
+    */
     matchSelfie(userID: string): Promise<any> {
 
         let options = this.acuantFaceMatchRequestOptions();
