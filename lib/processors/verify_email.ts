@@ -119,6 +119,10 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                         });
                     })
                     .then((response: any) => {
+                        // Add verification attempt
+                        return this.addVerificationAttempt(user.userId, user.verificationCode);
+                    })
+                    .then((response: any) => {
                         // Send verification code email
                         return self.sendVerificationEmail(user);
                     })
@@ -147,6 +151,16 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
         );
         
         return queue;
+    }
+
+    private addVerificationAttempt(userId: string, verificationCode: string) {
+        let userRef = this.db.ref(`/users/${userId}`);
+        let newAttemptRef = userRef.child('verificationAttempts').push();
+
+        return newAttemptRef.update({
+            verificationCode,
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+        });
     }
 
     private sendVerificationEmail(user: any): Promise<any> {
