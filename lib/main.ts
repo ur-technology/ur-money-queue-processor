@@ -3,18 +3,23 @@
 import * as dotenv from 'dotenv';
 import * as log from 'loglevel';
 import * as _ from 'lodash';
+
+import { AcuantIDVerifier } from './id-verification/acuant';
+import { ManualIDVerifier } from './id-verification/manual';
+
 import { QueueProcessor } from './processors/queue_processor';
 import { ChatQueueProcessor } from './processors/chat';
 import { IdentityAnnouncementQueueProcessor } from './processors/identity_announcement';
 import { PhoneLookupQueueProcessor } from './processors/phone_lookup';
 import { SendEmailQueueProcessor } from './processors/send_email';
-import { SignUpQueueProcessor } from './processors/sign_up';
-import { SignInQueueProcessor } from './processors/sign_in';
-import { VerifyIDQueueProcessor } from './processors/verify_id';
-import { UrTransactionImportQueueProcessor } from './processors/ur_transaction_import';
-import { ManualIDVerifier } from './id-verification/manual';
-import { UserQueueProcessor } from './processors/user_processor';
 import { ResetPasswordQueueProcessor } from './processors/reset_password';
+import { SignInQueueProcessor } from './processors/sign_in';
+import { SignUpQueueProcessor } from './processors/sign_up';
+import { UrTransactionImportQueueProcessor } from './processors/ur_transaction_import';
+import { UserQueueProcessor } from './processors/user_processor';
+import { VerifyIDQueueProcessor } from './processors/verify_id';
+import { VerifyEmailQueueProcessor } from './processors/verify_email';
+
 
 if (!process.env.NODE_ENV) {
     dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
@@ -50,12 +55,13 @@ let queueProcessors = _.map([
     IdentityAnnouncementQueueProcessor,
     PhoneLookupQueueProcessor,
     SendEmailQueueProcessor,
-    SignUpQueueProcessor,
     SignInQueueProcessor,
-    VerifyIDQueueProcessor,
+    SignUpQueueProcessor,
+    ResetPasswordQueueProcessor,
     UrTransactionImportQueueProcessor,
     UserQueueProcessor,
-    ResetPasswordQueueProcessor,
+    VerifyIDQueueProcessor,
+    VerifyEmailQueueProcessor,
 ], (queueProcessorClass) => {
     return new queueProcessorClass();
 });
