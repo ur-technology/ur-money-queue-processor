@@ -41,6 +41,12 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
                 "finished_state": "selfie_verification_success",
                 "error_state": "selfie_verification_error",
                 "timeout": 5 * 60 * 1000
+            }),
+            this.ensureQueueSpecLoaded("/manualIDVerification/specs/register_manual_verification", {
+                "in_progress_state": "registration_in_progress",
+                "finished_state": "registration_complete",
+                "error_state": "registration_error",
+                "timeout": 5 * 60 * 1000
             })
         ];
     }
@@ -48,7 +54,8 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
     process(): any[] {
         return [
             this.processVerifyIDSpec(),
-            this.processVerifySelfieSpec()
+            this.processVerifySelfieSpec(),
+            this.processRegisterManualVerification()
         ]
     }
 
@@ -109,6 +116,32 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
                 },
                 (error) => {
                     task._new_state = 'selfie_verification_error';
+                    task.result = { state: task._new_state, error: error };
+                    self.resolveTask(queue, task, resolve, reject)
+                });
+        });
+
+        return queue;
+    }
+
+    private processRegisterManualVerification() {
+
+        let self = this;
+        let options = { 'specId': 'register_manual_verification', 'numWorkers': 8, 'sanitize': false };
+        let queueRef = self.db.ref('/manualIDVerification');
+
+        let queue = new self.Queue(queueRef, options, (task: idScanRequest, progress: any, resolve: any, reject: any) => {
+
+            self.startTask(queue, task);
+
+            this.idVerifier.registerManualVerification(task.id).then(
+                () => {
+                    task._new_state = 'registration_complete';
+                    task.result = { state: task._new_state };
+                    self.resolveTask(queue, task, resolve, reject);
+                },
+                (error) => {
+                    task._new_state = 'registration_error';
                     task.result = { state: task._new_state, error: error };
                     self.resolveTask(queue, task, resolve, reject)
                 });
