@@ -1,0 +1,11 @@
+//- Verify Email
+extends ../layout/base
+
+block content
+  p Dear #{name},
+  br
+  p You requested to verify your UR account email.
+  p
+    | Click 
+    a(href=verifyLink) here
+    |  to verify your UR account email
