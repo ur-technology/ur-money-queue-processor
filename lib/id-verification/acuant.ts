@@ -147,6 +147,12 @@ export class AcuantIDVerifier {
 
                 // User loaded successfull
                 .then((user) => {
+
+                    if (user.freshdeskUrl) {
+                        resolve();
+                        return;
+                    }
+
                     return this.notifyFreshdesk(user);
                 },
                 // User failed to load
@@ -160,6 +166,7 @@ export class AcuantIDVerifier {
                         selfieMatched: true,
                         selfieConfidence: 0,
                         signUpBonusApproved: false,
+                        freshdeskUrl: freshdeskURL,
                         selfieMatchStatus: "Selfie match deferred to " + freshdeskURL,
                     });
                 },
