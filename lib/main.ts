@@ -14,6 +14,7 @@ import { VerifyIDQueueProcessor } from './processors/verify_id';
 import { UrTransactionImportQueueProcessor } from './processors/ur_transaction_import';
 import { AcuantIDVerifier } from './id-verification/acuant';
 import { UserQueueProcessor } from './processors/user_processor';
+import { ResetPasswordQueueProcessor } from './processors/reset_password';
 
 if (!process.env.NODE_ENV) {
     dotenv.config(); // if running on local machine, load config vars from .env file, otherwise these come from heroku
@@ -54,7 +55,8 @@ let queueProcessors = _.map([
     SignInQueueProcessor,
     VerifyIDQueueProcessor,
     UrTransactionImportQueueProcessor,
-    UserQueueProcessor
+    UserQueueProcessor,
+    ResetPasswordQueueProcessor,
 ], (queueProcessorClass) => {
     return new queueProcessorClass();
 });
