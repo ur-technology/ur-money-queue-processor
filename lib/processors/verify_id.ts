@@ -85,12 +85,12 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
             p.then(
                 () => {
                     task._new_state = 'id_verification_success';
-                    task.result = { state: task._new_state };
+                    task.result = { _state: task._new_state };
                     self.resolveTask(queue, task, resolve, reject);
                 },
                 (error) => {
                     task._new_state = 'id_verification_error';
-                    task.result = { state: task._new_state, error: error };
+                    task.result = { _state: task._new_state, error: error };
                     self.resolveTask(queue, task, resolve, reject)
                 });
         });
@@ -111,12 +111,12 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
             this.idVerifier.bypassSelfieMatch(task.id).then(
                 () => {
                     task._new_state = 'selfie_verification_success';
-                    task.result = { state: task._new_state };
+                    task.result = { _state: task._new_state };
                     self.resolveTask(queue, task, resolve, reject);
                 },
                 (error) => {
                     task._new_state = 'selfie_verification_error';
-                    task.result = { state: task._new_state, error: error };
+                    task.result = { _state: task._new_state, error: error };
                     self.resolveTask(queue, task, resolve, reject)
                 });
         });
