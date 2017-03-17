@@ -85,14 +85,23 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
 
                 self.startTask(queue, task);
 
-                // Check phone emptiness
-                if (!task.phone) {
-                    throw 'send_verification_email_canceled_because_phone_empty';
-                }
-                
-                // Check email emptiness
-                if (!task.email) {
-                    throw 'send_verification_email_canceled_because_email_empty';
+                try {
+                    // Check phone emptiness
+                    if (!task.phone) {
+                        throw 'send_verification_email_canceled_because_phone_empty';
+                    }
+                    
+                    // Check email emptiness
+                    if (!task.email) {
+                        throw 'send_verification_email_canceled_because_email_empty';
+                    }
+                } catch (error) {
+                    task.result = {
+                        state: error,
+                        error,
+                    };
+                    self.resolveTask(queue, task, resolve, reject);
+                    return;
                 }
                 
                 // Check if email exists
@@ -199,9 +208,18 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
 
                 self.startTask(queue, task);
 
-                // Check emptiness of verification code
-                if (!task.verificationCode) {
-                    throw 'verify_email_canceled_because_verification_code_empty';
+                try {
+                    // Check emptiness of verification code
+                    if (!task.verificationCode) {
+                        throw 'verify_email_canceled_because_verification_code_empty';
+                    }
+                } catch (error) {
+                    task.result = {
+                        state: error,
+                        error,
+                    };
+                    self.resolveTask(queue, task, resolve, reject);
+                    return;
                 }
 
                 // Find user by verification code
