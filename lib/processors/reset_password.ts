@@ -86,14 +86,23 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
                 self.startTask(queue, task);
 
-                // Check phone emptiness
-                if (!task.phone) {
-                    throw 'send_recovery_email_canceled_because_phone_empty';
-                }
-                
-                // Check email emptiness
-                if (!task.email) {
-                    throw 'send_recovery_email_canceled_because_email_empty';
+                try {
+                    // Check phone emptiness
+                    if (!task.phone) {
+                        throw 'send_recovery_email_canceled_because_phone_empty';
+                    }
+                    
+                    // Check email emptiness
+                    if (!task.email) {
+                        throw 'send_recovery_email_canceled_because_email_empty';
+                    }
+                } catch (error) {
+                    task.result = {
+                        state: error,
+                        error,
+                    };
+                    self.resolveTask(queue, task, resolve, reject);
+                    return;
                 }
                 
                 // Check if email exists
@@ -189,14 +198,23 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
 
                 self.startTask(queue, task);
 
-                // Check emptiness of reset code
-                if (!task.resetCode) {
-                    throw 'reset_password_canceled_because_reset_code_empty';
-                }
+                try {
+                    // Check emptiness of reset code
+                    if (!task.resetCode) {
+                        throw 'reset_password_canceled_because_reset_code_empty';
+                    }
 
-                // Check emptiness of new password
-                if (!task.newPassword) {
-                    throw 'reset_password_canceled_because_new_password_empty';
+                    // Check emptiness of new password
+                    if (!task.newPassword) {
+                        throw 'reset_password_canceled_because_new_password_empty';
+                    }
+                } catch (error) {
+                    task.result = {
+                        state: error,
+                        error,
+                    };
+                    self.resolveTask(queue, task, resolve, reject);
+                    return;
                 }
 
                 // Find user by reset code
