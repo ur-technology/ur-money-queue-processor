@@ -12,7 +12,7 @@ import { SignUpQueueProcessor } from './processors/sign_up';
 import { SignInQueueProcessor } from './processors/sign_in';
 import { VerifyIDQueueProcessor } from './processors/verify_id';
 import { UrTransactionImportQueueProcessor } from './processors/ur_transaction_import';
-import { AcuantIDVerifier } from './id-verification/acuant';
+import { ManualIDVerifier } from './id-verification/manual';
 import { UserQueueProcessor } from './processors/user_processor';
 import { ResetPasswordQueueProcessor } from './processors/reset_password';
 
@@ -40,10 +40,9 @@ QueueProcessor.auth = admin.auth();
 QueueProcessor.storage = google_cloud_storage.bucket(`${process.env.FIREBASE_PROJECT_ID}.appspot.com`);
 QueueProcessor.Queue = require('firebase-queue');
 
-QueueProcessor.idVerifier = new AcuantIDVerifier(
+QueueProcessor.idVerifier = new ManualIDVerifier(
     QueueProcessor.db,
-    QueueProcessor.storage,
-    QueueProcessor.env.ACUANT_API_KEY
+    QueueProcessor.storage
 );
 
 let queueProcessors = _.map([

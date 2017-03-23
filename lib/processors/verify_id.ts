@@ -108,7 +108,7 @@ export class VerifyIDQueueProcessor extends QueueProcessor {
 
             self.startTask(queue, task);
 
-            this.idVerifier.bypassSelfieMatch(task.id).then(
+            this.idVerifier.matchSelfie(task.id).then(
                 () => {
                     task._new_state = 'selfie_verification_success';
                     task.result = { _state: task._new_state };
