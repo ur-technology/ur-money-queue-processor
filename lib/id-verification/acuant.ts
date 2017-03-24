@@ -125,18 +125,6 @@ export class AcuantIDVerifier {
     }
 
     /*
-    Don't even try to match the selfie; just update the database and let a human fix it.
-    */
-    bypassSelfieMatch(userID: string): Promise<any> {
-        return this.updateUserRecord(userID, {
-            selfieMatched: true,
-            selfieConfidence: 0,
-            signUpBonusApproved: false,
-            selfieMatchStatus: "Automatic selfie match pending manual verification",
-        });
-    }
-
-    /*
     Send the user record and all its images off to freshdesk
     */
     registerManualVerification(userID: string): Promise<any> {

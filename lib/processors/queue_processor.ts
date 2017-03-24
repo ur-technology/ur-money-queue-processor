@@ -13,6 +13,9 @@ export class QueueProcessor {
     idVerifier: IDVerifier;
     Queue: any;
     _enabled: boolean;
+    _queueName: string;
+    _queueRef: any;
+    _specs: any;
 
     static db: any;
     static auth: any;
@@ -68,6 +71,19 @@ export class QueueProcessor {
                 resolve();
             }, (error: string) => {
                 reject(error);
+            });
+        });
+    }
+
+    addSampleTask(data: any): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const tasksRef = this._queueRef.child('tasks');
+            tasksRef.push(data, (error: any) => {
+                if (error) {
+                    reject(error.message);
+                } else {
+                    resolve(data);
+                }
             });
         });
     }
@@ -187,6 +203,18 @@ export class QueueProcessor {
         let ref = this.db.ref("/users").orderByChild("email").equalTo(email);
         return this.lookupUsers(ref);
     }
+    
+    lookupUsersByPhoneAndEmail(phone: string, email: string): Promise<any[]> {
+        return this.lookupUsersByPhone(phone)
+            .then((matchingUsers: any[]) => {
+                return _.filter(matchingUsers, (user: any) => user.email === email);
+            });
+    }
+    
+    lookupUsersByResetCode(resetCode: string): Promise<any[]> {
+        let ref = this.db.ref("/users").orderByChild("resetCode").equalTo(resetCode);
+        return this.lookupUsers(ref);
+    }
 
     lookupUsersByReferralCode(referralCode: string): Promise<any[]> {
         let ref = this.db.ref("/users").orderByChild("referralCode").equalTo(referralCode);
@@ -205,11 +233,14 @@ export class QueueProcessor {
 
                 // sort matching users with most completely signed up users first
                 let userMapping = snapshot.val() || {};
-                let users = _.values(userMapping);
-                let userIds = _.keys(userMapping);
-                _.each(users, (user: any, index: number) => { user.userId = userIds[index]; });
-                let sortedUsers = _.reverse(_.sortBy(users, (user) => { return self.completenessRank(user); }));
-                let sortedUserIds = _.map(sortedUsers, (user) => { return user.userId });
+                let sortedUsers = _
+                    .chain(userMapping)
+                    .map((user: any, id: string) => {
+                        user.userId = id;
+                        return user;
+                    })
+                    .orderBy((user: any) => self.completenessRank(user), 'desc')
+                    .value();
 
                 resolve(sortedUsers);
             }, (error: string) => {
