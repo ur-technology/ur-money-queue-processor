@@ -187,6 +187,9 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
                 self.db.ref(`/users/${userId}/wallet/announcementTransaction`).set({
                     hash: announcementTransactionHash
                 });
+                self.db.ref(`/users/${userId}`).update({
+                  showBonusConfirmedCallToAction: true
+                });
                 console.log(`successfully sent announcement transaction ${announcementTransactionHash} for user ${userId}`);
                 resolve();
             });
