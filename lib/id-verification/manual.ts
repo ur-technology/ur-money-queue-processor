@@ -97,7 +97,7 @@ export class ManualIDVerifier {
                         'name': user.name,
                         'email': user.email,
                         'phone': user.phone,
-                        'subject': `'Identity verification required for ${user.name} (${user.email}, ${user.countryCode})`,
+                        'subject': `Identity verification required for ${user.name} (${user.email}, ${user.countryCode})`,
                         'description': markup,
                         'status': 2,
                         'priority': 1,
