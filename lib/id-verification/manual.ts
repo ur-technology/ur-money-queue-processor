@@ -97,11 +97,15 @@ export class ManualIDVerifier {
                         'name': user.name,
                         'email': user.email,
                         'phone': user.phone,
-                        'subject': 'Identity verification required',
+                        'subject': `'Identity verification required for ${user.name} (${user.email}, ${user.countryCode})`,
                         'description': markup,
                         'status': 2,
                         'priority': 1,
-                        'tags': ['auto-generated', 'verification']
+                        'tags': [
+                            'auto-generated',
+                            'verification',
+                            'country: ' + user.countryCode,
+                        ]
                     }
 
                     var Request = unirest.post(URL);
