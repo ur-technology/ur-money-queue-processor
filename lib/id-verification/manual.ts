@@ -294,7 +294,6 @@ export class ManualIDVerifier {
                     resolve(user);
                 } else {
                     let error = `no user exists at location ${userRef.toString()}`
-                    log.warn('  ' + error);
                     reject(error);
                 }
             });
