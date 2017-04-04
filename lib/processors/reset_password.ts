@@ -116,6 +116,10 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         if (user.disabled) {
                             throw 'send_recovery_email_canceled_because_user_disabled';
                         }
+                        
+                        if (!user.isEmailVerified) {
+                            throw 'send_recovery_email_canceled_because_email_not_verified';
+                        }
 
                         // Generate reset code
                         user.resetCode = self.passwordService.generateCode(32);
@@ -221,6 +225,10 @@ export class ResetPasswordQueueProcessor extends QueueProcessor {
                         user = matchingUsers[0];
                         if (user.disabled) {
                             throw 'reset_password_canceled_because_user_disabled';
+                        }
+
+                        if (!user.isEmailVerified) {
+                            throw 'reset_password_canceled_because_email_not_verified';
                         }
 
                         // Generate hashed password
