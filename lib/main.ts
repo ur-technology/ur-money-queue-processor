@@ -9,6 +9,7 @@ import { ManualIDVerifier } from './id-verification/manual';
 
 import { QueueProcessor } from './processors/queue_processor';
 import { ChatQueueProcessor } from './processors/chat';
+import { CheckEmailUniquenessQueueProcessor } from './processors/check_email_uniqueness';
 import { IdentityAnnouncementQueueProcessor } from './processors/identity_announcement';
 import { PhoneLookupQueueProcessor } from './processors/phone_lookup';
 import { SendEmailQueueProcessor } from './processors/send_email';
@@ -52,6 +53,7 @@ QueueProcessor.idVerifier = new ManualIDVerifier(
 
 let queueProcessors = _.map([
     ChatQueueProcessor,
+    CheckEmailUniquenessQueueProcessor,
     IdentityAnnouncementQueueProcessor,
     PhoneLookupQueueProcessor,
     SendEmailQueueProcessor,
