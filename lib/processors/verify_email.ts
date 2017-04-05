@@ -31,7 +31,7 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                 timeout: 5 * 60 * 1000
             }
         };
-        
+
         this.passwordService = PasswordService.getInstance();
         this.mailerService = MailerService.getInstance();
     }
@@ -90,7 +90,7 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                     if (!task.phone) {
                         throw 'send_verification_email_canceled_because_phone_empty';
                     }
-                    
+
                     // Check email emptiness
                     if (!task.email) {
                         throw 'send_verification_email_canceled_because_email_empty';
@@ -103,7 +103,7 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                     self.resolveTask(queue, task, resolve, reject);
                     return;
                 }
-                
+
                 // Check if email exists
                 self.lookupUsersByPhoneAndEmail(task.phone, task.email)
                     .then((matchingUsers: any[]) => {
@@ -158,7 +158,7 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                     });
             }
         );
-        
+
         return queue;
     }
 
@@ -174,16 +174,16 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
 
     private sendVerificationEmail(user: any): Promise<any> {
         const verifyLink = `${process.env.APP_BASE_URL}?verification-code=${user.verificationCode}`;
-        
+
         return this.mailerService
             .sendWithTemplate(
-                process.env.UR_SUPPORT_EMAIL,
-                user.email,
-                'verify-email',
-                {
-                    name: user.name,
-                    verifyLink
-                }
+            process.env.UR_SUPPORT_EMAIL,
+            user.email,
+            'verify-email',
+            {
+                name: user.name,
+                verifyLink
+            }
             );
     }
 
@@ -249,8 +249,13 @@ export class VerifyEmailQueueProcessor extends QueueProcessor {
                         task.result = {
                             state: this._specs['verify_email']['finished_state'],
                         };
+
+                        return this.idVerifier.registerManualVerification(user.userId);
+                    })
+                    .then(() => {
                         self.resolveTask(queue, task, resolve, reject);
-                    }, (error: any) => {
+                    },
+                    (error: any) => {
                         if (_.isString(error) && /^verify_email_canceled_/.test(error)) {
                             task.result = {
                                 state: error,
