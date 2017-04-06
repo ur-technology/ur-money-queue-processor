@@ -43,7 +43,7 @@ export class ManualIDVerifier {
                 // User loaded successfull
                 .then((user) => {
 
-                    if (user.freshdeskUrl) {
+                    if (user.freshdeskUrl || user.signUpBonusApproved) {
                         resolve();
                         return;
                     }
