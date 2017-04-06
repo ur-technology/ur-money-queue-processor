@@ -59,27 +59,17 @@ export class SignUpQueueProcessor extends QueueProcessor {
                     return Promise.reject('code_generation_canceled_because_voip_phone_not_allowed');
                 }
 
-                if (task.sponsorReferralCode) {
-                    return self.lookupUserByReferralCode(task.sponsorReferralCode).then((sponsor: any) => {
-                        if (!sponsor) {
-                            return Promise.reject('code_generation_canceled_because_sponsor_not_found');
-                        } else if (sponsor.disabled) {
-                            return Promise.reject('code_generation_canceled_because_sponsor_disabled');
-                        } else {
-                            task.sponsorUserId = sponsor.userId;
-                            return Promise.resolve();
-                        }
-                    });
-                } else {
-                    return self.lookupUsersByEmail(task.email).then((matchingUsers: any[]) => {
-                        if (_.isEmpty(_.reject(matchingUsers, 'disabled'))) {
-                            return Promise.reject('code_generation_canceled_because_email_not_found');
-                        } else {
-                            task.userId = matchingUsers[0].userId;
-                            return Promise.resolve();
-                        }
-                    });
-                }
+                return self.lookupUserByReferralCode(task.sponsorReferralCode).then((sponsor: any) => {
+                    if (!sponsor) {
+                        return Promise.reject('code_generation_canceled_because_sponsor_not_found');
+                    } else if (sponsor.disabled) {
+                        return Promise.reject('code_generation_canceled_because_sponsor_disabled');
+                    } else {
+                        task.sponsorUserId = sponsor.userId;
+                        return Promise.resolve();
+                    }
+                });
+
             }).then(() => {
                 return self.sendAuthenticationCodeViaSms(task.phone);
             }).then((authenticationCode: string) => {
