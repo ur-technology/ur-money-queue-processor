@@ -147,8 +147,6 @@ export class IdentityAnnouncementQueueProcessor extends QueueProcessor {
             self.lookupUserById(user.sponsor.userId).then((sponsor: any) => {
                 if (!sponsor) {
                     reject('Could not find associated sponsor');
-                } else if (sponsor.disabled) {
-                    reject('Sponsor is disabled');
                 } else if (!sponsor.wallet || !sponsor.wallet.announcementTransaction || !sponsor.wallet.announcementTransaction.blockNumber || !sponsor.wallet.announcementTransaction.hash) {
                     reject('sponsor-lacks-announcement-transaction');
                 } else {
