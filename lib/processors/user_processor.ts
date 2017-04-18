@@ -19,13 +19,20 @@ export class UserQueueProcessor extends QueueProcessor {
         "finished_state": "user_check_password_finished",
         "error_state": "user_check_password_error",
         "timeout": 5 * 60 * 1000
+      }),
+      this.ensureQueueSpecLoaded("/userQueue/specs/user_referrals", {
+        "start_state": "user_referrals_requested",
+        "in_progress_state": "user_referrals_in_progress",
+        "finished_state": "user_referrals_finished",
+        "error_state": "user_referrals_error",
+        "timeout": 5 * 60 * 1000
       })
     ];
   }
 
   process(): any[] {
     return [
-      this.processChangePasswordQueue(), this.processCheckPassword()
+      this.processChangePasswordQueue(), this.processCheckPassword(), , this.processUserReferrals()
     ];
   }
 
@@ -84,6 +91,45 @@ export class UserQueueProcessor extends QueueProcessor {
     });
   }
 
+  processUserReferrals() {
+    let self = this;
+    let options = { specId: 'user_referrals', numWorkers: 5, sanitize: false };
+    let queueRef = self.db.ref('/userQueue');
+    let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+      console.log('comenzo');
+      self.startTask(queue, task);
+
+      if (!task.userId) {
+        self.rejectTask(queue, task, 'expecting userId', reject);
+        return;
+      }
+
+
+      self.db.ref('/users')
+        .orderByChild('sponsor/userId')
+        .equalTo(task.userId)
+        .once('value').then((snapshot: any) => {
+          let referrals = snapshot.val();
+          let result: any = {};
+
+          _.each(referrals, (referral, referralUserId) => {
+            let objeto: any = _.pick(referral, ['downlineLevel', 'name', 'profilePhotoUrl']);
+            objeto.id = referralUserId;
+            result[referralUserId] = objeto;
+          });
+          task.result = { referrals: result };
+          // if (result.length > 0) {
+          //   task.result = { referrals: JSON.stringify(result) };
+          // } else {
+          //   task.result = { state: 'user_referrals_canceled_becasue_no_referrals' };
+          // }
+          // task.result.referrals = result;
+          self.resolveTask(queue, task, resolve, reject);
+        });
+    });
+  }
+
+
   private generateHashedPassword(task: any): Promise<string> {
     return new Promise((resolve, reject) => {
       let scryptAsync = require('scrypt-async');
@@ -92,5 +138,4 @@ export class UserQueueProcessor extends QueueProcessor {
       });
     });
   }
-
 }
