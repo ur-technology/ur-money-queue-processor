@@ -104,26 +104,26 @@ export class UserQueueProcessor extends QueueProcessor {
         return;
       }
 
-
       self.db.ref('/users')
         .orderByChild('sponsor/userId')
         .equalTo(task.userId)
         .once('value').then((snapshot: any) => {
           let referrals = snapshot.val();
           let result: any = {};
+          let hasResults = false;
 
           _.each(referrals, (referral, referralUserId) => {
-            let objeto: any = _.pick(referral, ['downlineLevel', 'name', 'profilePhotoUrl']);
-            objeto.id = referralUserId;
+            let objeto: any = _.pick(referral, ['name', 'profilePhotoUrl']);
+            objeto.userId = referralUserId;
             result[referralUserId] = objeto;
+            hasResults = true;
           });
-          task.result = { referrals: result };
-          // if (result.length > 0) {
-          //   task.result = { referrals: JSON.stringify(result) };
-          // } else {
-          //   task.result = { state: 'user_referrals_canceled_becasue_no_referrals' };
-          // }
-          // task.result.referrals = result;
+
+          if (hasResults) {
+              task.result = { state: 'user_referrals_succeeded', referrals: _.sortBy(result, 'name') };
+          } else {
+            task.result = { state: 'user_referrals_canceled_because_no_referrals' };
+          }
           self.resolveTask(queue, task, resolve, reject);
         });
     });
