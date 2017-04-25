@@ -96,9 +96,7 @@ export class UserQueueProcessor extends QueueProcessor {
     let options = { specId: 'user_referrals', numWorkers: 5, sanitize: false };
     let queueRef = self.db.ref('/userQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
-      console.log('comenzo');
       self.startTask(queue, task);
-
       if (!task.userId) {
         self.rejectTask(queue, task, 'expecting userId', reject);
         return;
@@ -106,7 +104,7 @@ export class UserQueueProcessor extends QueueProcessor {
 
       self.db.ref('/users')
         .orderByChild('sponsor/userId')
-        .equalTo(task.userId)
+        .equalTo(task.userIdToLook)
         .once('value').then((snapshot: any) => {
           let referrals = snapshot.val();
           let result: any = {};
