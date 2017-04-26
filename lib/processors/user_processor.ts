@@ -118,12 +118,18 @@ export class UserQueueProcessor extends QueueProcessor {
             hasResults = true;
           });
 
+          let numOfItemsToReturn = task.numOfItemsToReturn;
+          result = _.sortBy(result, (r: any) => { return 1000000 - (r.downlineSize || 0); });
+          let startAt = task.startAt ? task.startAt : 0;
+          result = result.slice(startAt, startAt + numOfItemsToReturn);
+          let endOfResults = (startAt + numOfItemsToReturn) > _.size(referrals);
+
           if (hasResults) {
-              task.result = { state: 'user_referrals_succeeded', referrals: _.sortBy(result, 'name') };
+            task.result = { state: 'user_referrals_succeeded', referrals: result, endOfResults: endOfResults };
           } else {
             task.result = { state: 'user_referrals_canceled_because_no_referrals' };
           }
-          // var endDate   = new Date();
+          // var endDate = new Date();
           // var seconds = (endDate.getTime() - startDate.getTime()) / 1000;
           // console.log('seconds', seconds)
           self.resolveTask(queue, task, resolve, reject);
