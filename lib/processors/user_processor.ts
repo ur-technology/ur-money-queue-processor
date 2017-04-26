@@ -96,7 +96,7 @@ export class UserQueueProcessor extends QueueProcessor {
     let options = { specId: 'user_referrals', numWorkers: 5, sanitize: false };
     let queueRef = self.db.ref('/userQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
-      // var startDate = new Date();
+      var startDate = new Date();
       self.startTask(queue, task);
       if (!task.userId) {
         self.rejectTask(queue, task, 'expecting userId', reject);
@@ -109,29 +109,36 @@ export class UserQueueProcessor extends QueueProcessor {
         .once('value').then((snapshot: any) => {
           let referrals = snapshot.val();
           let result: any = {};
-          let hasResults = false;
 
           _.each(referrals, (referral, referralUserId) => {
             let objeto: any = _.pick(referral, ['name', 'profilePhotoUrl', 'email', 'downlineSize', 'phone', 'countryCode']);
             objeto.userId = referralUserId;
-            result[referralUserId] = objeto;
-            hasResults = true;
+            if (task.searchText && task.searchText.length > 0) {
+              if (objeto.name.toUpperCase().includes(task.searchText.toUpperCase())) {
+                result[referralUserId] = objeto;
+              } else if (objeto.email.toUpperCase().includes(task.searchText.toUpperCase())) {
+                result[referralUserId] = objeto;
+              } else if (objeto.phone.toUpperCase().includes(task.searchText.toUpperCase())) {
+                result[referralUserId] = objeto;
+              }
+            } else {
+              result[referralUserId] = objeto;
+            }
           });
-
           let numOfItemsToReturn = task.numOfItemsToReturn;
           result = _.sortBy(result, (r: any) => { return 1000000 - (r.downlineSize || 0); });
           let startAt = task.startAt ? task.startAt : 0;
           result = result.slice(startAt, startAt + numOfItemsToReturn);
           let endOfResults = (startAt + numOfItemsToReturn) > _.size(referrals);
 
-          if (hasResults) {
+          if (_.size(result)>0) {
             task.result = { state: 'user_referrals_succeeded', referrals: result, endOfResults: endOfResults };
           } else {
-            task.result = { state: 'user_referrals_canceled_because_no_referrals' };
+            task.result = { state: 'user_referrals_canceled_because_no_referrals', endOfResults: endOfResults };
           }
-          // var endDate = new Date();
-          // var seconds = (endDate.getTime() - startDate.getTime()) / 1000;
-          // console.log('seconds', seconds)
+          var endDate = new Date();
+          var seconds = (endDate.getTime() - startDate.getTime()) / 1000;
+          console.log('seconds', seconds)
           self.resolveTask(queue, task, resolve, reject);
         });
     });
