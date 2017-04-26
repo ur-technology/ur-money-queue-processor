@@ -114,11 +114,11 @@ export class UserQueueProcessor extends QueueProcessor {
             let objeto: any = _.pick(referral, ['name', 'profilePhotoUrl', 'email', 'downlineSize', 'phone', 'countryCode']);
             objeto.userId = referralUserId;
             if (task.searchText && task.searchText.length > 0) {
-              if (objeto.name.toUpperCase().includes(task.searchText.toUpperCase())) {
+              if (objeto.name && String(objeto.name).toUpperCase().includes(task.searchText.toUpperCase())) {
                 result[referralUserId] = objeto;
-              } else if (objeto.email.toUpperCase().includes(task.searchText.toUpperCase())) {
+              } else if (objeto.email && String(objeto.email).toUpperCase().includes(task.searchText.toUpperCase())) {
                 result[referralUserId] = objeto;
-              } else if (objeto.phone.toUpperCase().includes(task.searchText.toUpperCase())) {
+              } else if (objeto.phone && String(objeto.phone).toUpperCase().includes(task.searchText.toUpperCase())) {
                 result[referralUserId] = objeto;
               }
             } else {
@@ -127,9 +127,10 @@ export class UserQueueProcessor extends QueueProcessor {
           });
           let numOfItemsToReturn = task.numOfItemsToReturn;
           result = _.sortBy(result, (r: any) => { return 1000000 - (r.downlineSize || 0); });
+          let size = _.size(result);
           let startAt = task.startAt ? task.startAt : 0;
           result = result.slice(startAt, startAt + numOfItemsToReturn);
-          let endOfResults = (startAt + numOfItemsToReturn) > _.size(referrals);
+          let endOfResults = (startAt + numOfItemsToReturn) > size;
 
           if (_.size(result)>0) {
             task.result = { state: 'user_referrals_succeeded', referrals: result, endOfResults: endOfResults };
