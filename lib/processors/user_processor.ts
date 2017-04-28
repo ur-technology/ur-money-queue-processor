@@ -152,7 +152,7 @@ export class UserQueueProcessor extends QueueProcessor {
         self.lookupUsersByPhone(task.searchText).then((results)=>{
           if(results && results.length>0){
             dataToReturn = _.map(results, user =>{
-              let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
+              let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
                if(user.wallet && user.wallet.address){
                  userToReturn.walletAddress =  user.wallet.address;
                }
@@ -164,7 +164,7 @@ export class UserQueueProcessor extends QueueProcessor {
           self.lookupUsersByEmail(task.searchText).then((results)=>{
             if(results && results.length>0){
               dataToReturn = _.map(results, user =>{
-                let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId']);
+                let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
                  if(user.wallet && user.wallet.address){
                    userToReturn.walletAddress =  user.wallet.address;
                  }
