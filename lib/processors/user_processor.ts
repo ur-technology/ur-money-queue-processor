@@ -27,11 +27,11 @@ export class UserQueueProcessor extends QueueProcessor {
         "error_state": "user_referrals_error",
         "timeout": 5 * 60 * 1000
       }),
-      this.ensureQueueSpecLoaded("/userQueue/specs/search_recipients", {
-        "start_state": "search_recipients_requested",
-        "in_progress_state": "search_recipients_in_progress",
-        "finished_state": "search_recipients_finished",
-        "error_state": "search_recipients_error",
+      this.ensureQueueSpecLoaded("/userQueue/specs/search_recipients_wallets", {
+        "start_state": "search_recipients_wallets_requested",
+        "in_progress_state": "search_recipients_wallets_in_progress",
+        "finished_state": "search_recipients_wallets_finished",
+        "error_state": "search_recipients_wallets_error",
         "timeout": 5 * 60 * 1000
       })
     ];
@@ -39,7 +39,7 @@ export class UserQueueProcessor extends QueueProcessor {
 
   process(): any[] {
     return [
-      this.processChangePasswordQueue(), this.processCheckPassword(), this.processUserReferrals(), this.processSearchRecipients()
+      this.processChangePasswordQueue(), this.processCheckPassword(), this.processUserReferrals(), this.processSearchRecipientsWithWallets()
     ];
   }
 
@@ -136,9 +136,9 @@ export class UserQueueProcessor extends QueueProcessor {
     });
   }
 
-  processSearchRecipients(){
+  processSearchRecipientsWithWallets(){
     let self = this;
-    let options = { specId: 'search_recipients', numWorkers: 5, sanitize: false };
+    let options = { specId: 'search_recipients_wallets', numWorkers: 5, sanitize: false };
     let queueRef = self.db.ref('/userQueue');
     let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
       self.startTask(queue, task);
@@ -155,8 +155,8 @@ export class UserQueueProcessor extends QueueProcessor {
               let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
                if(user.wallet && user.wallet.address){
                  userToReturn.walletAddress =  user.wallet.address;
+                 return userToReturn;
                }
-              return userToReturn;
             });
           }
 
@@ -167,14 +167,16 @@ export class UserQueueProcessor extends QueueProcessor {
                 let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
                  if(user.wallet && user.wallet.address){
                    userToReturn.walletAddress =  user.wallet.address;
+                   return userToReturn;
                  }
-                return userToReturn;
               });
             }
-            if(dataToReturn && dataToReturn.length>0){
-              task.result = {state: 'search_recipients_succeeded', data: dataToReturn}
+
+            dataToReturn = _.compact(dataToReturn);
+            if(!_.isEmpty(dataToReturn)){
+              task.result = {state: 'search_recipients_wallets_succeeded', data: dataToReturn}
             } else {
-              task.result = {state: 'search_recipients_canceled_because_no_results'}
+              task.result = {state: 'search_recipients_wallets_canceled_because_no_results'}
             }
 
           self.resolveTask(queue, task, resolve, reject);
