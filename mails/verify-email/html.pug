@@ -3,7 +3,11 @@ extends ../layout/base
 
 block content
   p Hey #{name},
+  p Thanks for signing up to UR money. You're almost done! We just need to verify your email address, then we can get started on processing your bonus.
   p
     | Please click 
     a(href=verifyLink) here
-    |  to verify your UR account email address.
+    |  to verify your UR email address. 
+	
+  p If you can't click that link, then you can copy this URL and paste it into your browser: #{verifyLink}
+  p <strong>Important:</strong> verifying your email address will not automatically activate your bonus. In order to help prevent fraud and create a secure environment for our community, we'll be checking the identity documents you provided. This process can take up to 7 business days. As soon as we've done that, we will activate your bonus and you can start earning even more by referring your friends.
