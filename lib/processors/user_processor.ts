@@ -26,13 +26,20 @@ export class UserQueueProcessor extends QueueProcessor {
         "finished_state": "user_referrals_finished",
         "error_state": "user_referrals_error",
         "timeout": 5 * 60 * 1000
+      }),
+      this.ensureQueueSpecLoaded("/userQueue/specs/search_recipients_wallets", {
+        "start_state": "search_recipients_wallets_requested",
+        "in_progress_state": "search_recipients_wallets_in_progress",
+        "finished_state": "search_recipients_wallets_finished",
+        "error_state": "search_recipients_wallets_error",
+        "timeout": 5 * 60 * 1000
       })
     ];
   }
 
   process(): any[] {
     return [
-      this.processChangePasswordQueue(), this.processCheckPassword(), , this.processUserReferrals()
+      this.processChangePasswordQueue(), this.processCheckPassword(), this.processUserReferrals(), this.processSearchRecipientsWithWallets()
     ];
   }
 
@@ -125,6 +132,55 @@ export class UserQueueProcessor extends QueueProcessor {
             task.result = { state: 'user_referrals_canceled_because_no_referrals' };
           }
           self.resolveTask(queue, task, resolve, reject);
+        });
+    });
+  }
+
+  processSearchRecipientsWithWallets(){
+    let self = this;
+    let options = { specId: 'search_recipients_wallets', numWorkers: 5, sanitize: false };
+    let queueRef = self.db.ref('/userQueue');
+    let queue = new self.Queue(queueRef, options, (task: any, progress: any, resolve: any, reject: any) => {
+      self.startTask(queue, task);
+
+      if (!task.userId) {
+        self.rejectTask(queue, task, 'expecting userId', reject);
+        return;
+      }
+
+        let dataToReturn : any[] =[];
+        self.lookupUsersByPhone(task.searchText).then((results)=>{
+          if(results && results.length>0){
+            dataToReturn = _.map(results, user =>{
+              let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
+               if(user.wallet && user.wallet.address){
+                 userToReturn.walletAddress =  user.wallet.address;
+                 return userToReturn;
+               }
+            });
+          }
+
+        }).then(()=>{
+          self.lookupUsersByEmail(task.searchText).then((results)=>{
+            if(results && results.length>0){
+              dataToReturn = _.map(results, user =>{
+                let userToReturn: any = _.pick(user, ['name', 'profilePhotoUrl', 'userId', 'countryCode']);
+                 if(user.wallet && user.wallet.address){
+                   userToReturn.walletAddress =  user.wallet.address;
+                   return userToReturn;
+                 }
+              });
+            }
+
+            dataToReturn = _.compact(dataToReturn);
+            if(!_.isEmpty(dataToReturn)){
+              task.result = {state: 'search_recipients_wallets_succeeded', data: dataToReturn}
+            } else {
+              task.result = {state: 'search_recipients_wallets_canceled_because_no_results'}
+            }
+
+          self.resolveTask(queue, task, resolve, reject);
+          });
         });
     });
   }
