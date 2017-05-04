@@ -145,7 +145,9 @@ export class UserQueueProcessor extends QueueProcessor {
                             result[referralUserId] = objeto;
                         }
 
-                        result[referralUserId].state = this.userState(referral);
+                        if (result[referralUserId]) {
+                            result[referralUserId].state = this.userState(referral);
+                        }
                     });
                     let numOfItemsToReturn = task.numOfItemsToReturn;
                     result = _.sortBy(result, (r: any) => { return 1000000 - (r.downlineSize || 0); });
