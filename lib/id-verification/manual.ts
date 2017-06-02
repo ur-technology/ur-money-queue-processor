@@ -255,7 +255,7 @@ export class ManualIDVerifier {
 
         var config = {
             action: 'read',
-            expires: '05-31-2017'
+            expires: '12-31-2017'
         };
 
         return new Promise((resolve, reject) => {
